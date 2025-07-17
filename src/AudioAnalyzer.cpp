@@ -240,7 +240,7 @@ AudioStats AudioAnalyzer::calculateAudioStats(const std::vector<double>& channel
 
         if (chunk % 5 == 0) {
             double progress = 85.0 + (static_cast<double>(chunk) / totalChunks) * 5.0;
-            updateProgress(progress, "Calculating audio statistics... (" + std::to_string(chunk) + "/" + std::to_string(totalChunks) + ")");
+            updateProgress(progress, "Calculating audio statistics... (" + std::to_string(chunk) + "/" + std::to_string(totalChunks) + " chunks)");
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
@@ -301,12 +301,15 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
                                    "MB). Maximum allowed: " + std::to_string(maxFileSize / (1024 * 1024)) + "MB");
         }
 
+        updateProgress(5, "File size OK (" + std::to_string(fileSize / (1024 * 1024)) + "MB)");
         updateProgress(10, "Loading audio file...");
 
         double sampleRate, duration;
         std::vector<double> channelData = loadAudioFile(filename, sampleRate, duration);
         int totalSamples = static_cast<int>(channelData.size());
 
+        updateProgress(30, "Audio loaded (" + std::to_string(totalSamples / 1000) + "k samples, " +
+                      std::to_string(static_cast<int>(duration)) + "s duration)");
         updateProgress(35, "Generating waveform levels...");
 
         // Create multiple resolution levels
@@ -321,7 +324,7 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
 
         for (size_t i = 0; i < resolutions.size(); i++) {
             double progress = 35.0 + (static_cast<double>(i) / resolutions.size()) * 20.0;
-            updateProgress(progress, "Generating " + resolutions[i].first + " waveform level...");
+            updateProgress(progress, "Generating " + resolutions[i].first + " waveform level (" + std::to_string(i + 1) + "/" + std::to_string(resolutions.size()) + ")...");
 
             waveformLevels[resolutions[i].first] = generateWaveformLevel(channelData, resolutions[i].second);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -350,7 +353,7 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
             sampleRate
         };
 
-        updateProgress(100, "Analysis complete!");
+        updateProgress(100, "Analysis complete! (" + std::to_string(waveformData.data.size()) + " waveform points)");
         return waveformData;
 
     } catch (const std::exception& e) {

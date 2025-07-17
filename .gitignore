@@ -4,7 +4,7 @@
 *.a
 NotARhythmGame
 *.chart
-imgui.ini
+*.ini
 NotARhythmGame-Linux.tar.gz
 recent_charts.txt
 NotARhythmGame-Dist/
