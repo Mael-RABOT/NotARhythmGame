@@ -10,15 +10,25 @@ help:  ## Display this help
 build:  ## Build the project
 	make -C src
 
+##@ Package
+.PHONY: package
+package:  ## Create distribution package
+	./package.sh
+
 ##@ Clean
 .PHONY: clean
 clean:  ## Clean the project
 	rm -f NotARhythmGame
+	make -C src clean
 
 ##@ Full Clean
 .PHONY: fclean
 fclean: clean ## Full clean the project
 	rm -f src/*.o
+	rm -f NotARhythmGame
+	rm -f NotARhythmGame-Linux.tar.gz
+	rm -rf NotARhythmGame-Linux
+	rm -rf NotARhythmGame-Dist
 
 ##@ Rebuild
 .PHONY: re

@@ -62,16 +62,21 @@ $(EXE): $(OBJS)
 clean:
 	rm -f $(EXE) $(OBJS)
 
-# Print library information
-info:
-	@echo "Required libraries:"
-	@echo "  - GLFW3 (windowing)"
-	@echo "  - libsndfile (audio file reading)"
-	@echo "  - BASS (audio playback)"
-	@echo "  - OpenGL (graphics)"
-	@echo "  - pthread (threading)"
-	@echo ""
-	@echo "C++ Standard: C++17"
-	@echo "Platform: $(UNAME_S)"
+.PHONY: all clean static embed-assets
 
-.PHONY: all clean install-deps-linux install-deps-macos info
+##---------------------------------------------------------------------
+## STATIC BUILD (Self-contained binary)
+##---------------------------------------------------------------------
+static: CXXFLAGS += -static-libgcc -static-libstdc++
+static: LIBS = $(LINUX_GL_LIBS) -lglfw -L../libraries -lbass -lsndfile -lm -lpthread -ldl -lX11 -lXrandr -lXinerama -lXcursor -lXxf86vm -lXfixes
+static: $(EXE)
+	@echo Static build complete for $(ECHO_MESSAGE)
+	@echo "Binary is now self-contained and can be distributed without external dependencies"
+
+##---------------------------------------------------------------------
+## EMBED ASSETS (Embed hit sound into binary)
+##---------------------------------------------------------------------
+embed-assets: $(EXE)
+	@echo "Embedding assets into binary..."
+	objcopy --add-section .assets=../assets/hit.wav $(EXE)
+	@echo "Assets embedded successfully"
