@@ -60,7 +60,14 @@ void Editor::drawTimelineLanes() {
     }
 
     for (const auto& note : nodeManager.getNotes()) {
-        if (note.timestamp < visible_start || note.timestamp > visible_start + visible_duration) continue;
+        if (note.type == Core::NoteType::HOLD) {
+            if ((note.timestamp < visible_start && note.endTimestamp < visible_start) ||
+                (note.timestamp > visible_start + visible_duration && note.endTimestamp > visible_start + visible_duration)) {
+                continue;
+            }
+        } else {
+            if (note.timestamp < visible_start || note.timestamp > visible_start + visible_duration) continue;
+        }
 
         float x = content_pos.x + (note.timestamp - visible_start) * pixels_per_second;
         float y = timeline_y + note.lane * laneHeight + laneHeight * 0.5f;
@@ -82,12 +89,48 @@ void Editor::drawTimelineLanes() {
             noteColor = IM_COL32(255, 200, 100, 200);
             borderColor = IM_COL32(255, 180, 80, 255);
         } else {
-            if (note.lane == Core::Lane::TOP) {
-                noteColor = IM_COL32(100, 150, 255, 200);
-                borderColor = IM_COL32(80, 120, 200, 255);
+            if (note.type == Core::NoteType::HOLD) {
+                if (note.lane == Core::Lane::TOP) {
+                    noteColor = IM_COL32(100, 150, 255, 180);
+                    borderColor = IM_COL32(80, 120, 200, 255);
+                } else {
+                    noteColor = IM_COL32(255, 100, 150, 180);
+                    borderColor = IM_COL32(200, 80, 120, 255);
+                }
             } else {
-                noteColor = IM_COL32(255, 100, 150, 200);
-                borderColor = IM_COL32(200, 80, 120, 255);
+                if (note.lane == Core::Lane::TOP) {
+                    noteColor = IM_COL32(100, 150, 255, 200);
+                    borderColor = IM_COL32(80, 120, 200, 255);
+                } else {
+                    noteColor = IM_COL32(255, 100, 150, 200);
+                    borderColor = IM_COL32(200, 80, 120, 255);
+                }
+            }
+        }
+
+        if (note.type == Core::NoteType::HOLD) {
+            float endX = content_pos.x + (note.endTimestamp - visible_start) * pixels_per_second;
+
+            float drawStartX = std::max(x, content_pos.x);
+            float drawEndX = std::min(endX, content_pos.x + timelineWidth);
+
+            if (drawEndX > drawStartX) {
+                float holdHeight = radius * 1.5f;
+
+                draw_list->AddRectFilled(
+                    ImVec2(drawStartX, y - holdHeight * 0.5f),
+                    ImVec2(drawEndX, y + holdHeight * 0.5f),
+                    noteColor
+                );
+
+                draw_list->AddRect(
+                    ImVec2(drawStartX, y - holdHeight * 0.5f),
+                    ImVec2(drawEndX, y + holdHeight * 0.5f),
+                    borderColor,
+                    0.0f,
+                    0,
+                    2.0f
+                );
             }
         }
 
@@ -112,6 +155,33 @@ void Editor::drawTimelineLanes() {
             24,
             2.0f
         );
+
+        if (note.type == Core::NoteType::HOLD) {
+            float endX = content_pos.x + (note.endTimestamp - visible_start) * pixels_per_second;
+            if (endX >= content_pos.x && endX <= content_pos.x + timelineWidth) {
+                draw_list->AddCircleFilled( // End shadow
+                    ImVec2(endX + 2, y + 2),
+                    radius * 0.7f,
+                    IM_COL32(0, 0, 0, 50),
+                    24
+                );
+
+                draw_list->AddCircleFilled( // End body
+                    ImVec2(endX, y),
+                    radius * 0.7f,
+                    noteColor,
+                    24
+                );
+
+                draw_list->AddCircle( // End border
+                    ImVec2(endX, y),
+                    radius * 0.7f,
+                    borderColor,
+                    24,
+                    2.0f
+                );
+            }
+        }
 
         if (showNoteIds || note.id == selectedNoteId || isMultiSelected) {
             char idText[16];
@@ -142,20 +212,46 @@ void Editor::drawTimelineLanes() {
                 selectionStatus = " (Multi-Selected)";
             }
 
-            ImGui::SetTooltip(
-                "Note #%d%s\n"
-                "Lane: %s\n"
-                "Time: %.2fs (%.1f BPM)\n"
-                "Click to select\n"
-                "Ctrl+Click for multi-select\n"
-                "Double-click to delete\n"
-                "Drag to move",
-                note.id,
-                selectionStatus,
-                note.lane == Core::Lane::TOP ? "Top" : "Bottom",
-                note.timestamp,
-                note.timestamp > 0 ? 60.0 / note.timestamp : 0.0
-            );
+            const char* noteTypeStr = (note.type == Core::NoteType::HOLD) ? "HOLD" : "TAP";
+
+            if (note.type == Core::NoteType::HOLD) {
+                ImGui::SetTooltip(
+                    "Note #%d%s\n"
+                    "Type: %s\n"
+                    "Lane: %s\n"
+                    "Start: %.2fs\n"
+                    "End: %.2fs\n"
+                    "Duration: %.2fs\n"
+                    "Click to select\n"
+                    "Ctrl+Click for multi-select\n"
+                    "Double-click to delete\n"
+                    "Drag to move",
+                    note.id,
+                    selectionStatus,
+                    noteTypeStr,
+                    note.lane == Core::Lane::TOP ? "Top" : "Bottom",
+                    note.timestamp,
+                    note.endTimestamp,
+                    note.endTimestamp - note.timestamp
+                );
+            } else {
+                ImGui::SetTooltip(
+                    "Note #%d%s\n"
+                    "Type: %s\n"
+                    "Lane: %s\n"
+                    "Time: %.2fs (%.1f BPM)\n"
+                    "Click to select\n"
+                    "Ctrl+Click for multi-select\n"
+                    "Double-click to delete\n"
+                    "Drag to move",
+                    note.id,
+                    selectionStatus,
+                    noteTypeStr,
+                    note.lane == Core::Lane::TOP ? "Top" : "Bottom",
+                    note.timestamp,
+                    note.timestamp > 0 ? 60.0 / note.timestamp : 0.0
+                );
+            }
         }
     }
 
@@ -221,7 +317,18 @@ void Editor::handleNotePlacementAndInteraction() {
             float note_y = timeline_y + note.lane * laneHeight + laneHeight * 0.5f;
             float distance = sqrtf((mouse.x - note_x) * (mouse.x - note_x) + (mouse.y - note_y) * (mouse.y - note_y));
 
+            bool noteClicked = false;
             if (distance <= noteRadius) {
+                noteClicked = true;
+            } else if (note.type == Core::NoteType::HOLD) {
+                float end_x = content_pos.x + (note.endTimestamp - visible_start) * pixels_per_second;
+                float end_distance = sqrtf((mouse.x - end_x) * (mouse.x - end_x) + (mouse.y - note_y) * (mouse.y - note_y));
+                if (end_distance <= noteRadius * 0.7f) {
+                    noteClicked = true;
+                }
+            }
+
+            if (noteClicked) {
                 clickedOnNote = true;
                 if (ImGui::IsMouseClicked(0)) {
                     bool ctrlPressed = ImGui::GetIO().KeyCtrl;
@@ -256,9 +363,20 @@ void Editor::handleNotePlacementAndInteraction() {
 
                 snapped = std::clamp(snapped, 0.0, songDuration);
 
-                int newNoteId = nodeManager.addNote(lane, snapped);
-                selectedNoteId = newNoteId;
-                hoveredNoteId = newNoteId;
+                // Check if Shift is held to create a hold note
+                bool shiftPressed = ImGui::GetIO().KeyShift;
+                if (shiftPressed) {
+                    // Create a hold note with default duration (1 beat)
+                    double endTime = snapped + gridSpacing;
+                    endTime = std::clamp(endTime, snapped, songDuration);
+                    int newNoteId = nodeManager.addHoldNote(lane, snapped, endTime);
+                    selectedNoteId = newNoteId;
+                    hoveredNoteId = newNoteId;
+                } else {
+                    int newNoteId = nodeManager.addNote(lane, snapped);
+                    selectedNoteId = newNoteId;
+                    hoveredNoteId = newNoteId;
+                }
             }
         }
 
@@ -268,7 +386,18 @@ void Editor::handleNotePlacementAndInteraction() {
                 float note_y = timeline_y + note.lane * laneHeight + laneHeight * 0.5f;
                 float distance = sqrtf((mouse.x - note_x) * (mouse.x - note_x) + (mouse.y - note_y) * (mouse.y - note_y));
 
+                bool noteClicked = false;
                 if (distance <= noteRadius) {
+                    noteClicked = true;
+                } else if (note.type == Core::NoteType::HOLD) {
+                    float end_x = content_pos.x + (note.endTimestamp - visible_start) * pixels_per_second;
+                    float end_distance = sqrtf((mouse.x - end_x) * (mouse.x - end_x) + (mouse.y - note_y) * (mouse.y - note_y));
+                    if (end_distance <= noteRadius * 0.7f) {
+                        noteClicked = true;
+                    }
+                }
+
+                if (noteClicked) {
                     nodeManager.removeNote(note.id);
                     if (selectedNoteId == note.id) selectedNoteId = -1;
                     if (hoveredNoteId == note.id) hoveredNoteId = -1;
@@ -284,7 +413,18 @@ void Editor::handleNotePlacementAndInteraction() {
                 float note_y = timeline_y + selectedNote->lane * laneHeight + laneHeight * 0.5f;
                 float distance = sqrtf((mouse.x - note_x) * (mouse.x - note_x) + (mouse.y - note_y) * (mouse.y - note_y));
 
+                bool noteClicked = false;
                 if (distance <= noteRadius) {
+                    noteClicked = true;
+                } else if (selectedNote->type == Core::NoteType::HOLD) {
+                    float end_x = content_pos.x + (selectedNote->endTimestamp - visible_start) * pixels_per_second;
+                    float end_distance = sqrtf((mouse.x - end_x) * (mouse.x - end_x) + (mouse.y - note_y) * (mouse.y - note_y));
+                    if (end_distance <= noteRadius * 0.7f) {
+                        noteClicked = true;
+                    }
+                }
+
+                if (noteClicked) {
                     isDragging = true;
                     draggedNoteId = selectedNoteId;
                     dragStartPos = mouse;
@@ -308,7 +448,16 @@ void Editor::handleNotePlacementAndInteraction() {
 
             newTimestamp = std::clamp(newTimestamp, 0.0, songDuration);
 
-            nodeManager.moveNote(draggedNoteId, newLane, newTimestamp);
+            Core::Note* draggedNote = nodeManager.getNoteById(draggedNoteId);
+            if (draggedNote && draggedNote->type == Core::NoteType::HOLD) {
+                // For hold notes, maintain the duration when dragging
+                double duration = draggedNote->endTimestamp - draggedNote->timestamp;
+                double newEndTimestamp = newTimestamp + duration;
+                newEndTimestamp = std::clamp(newEndTimestamp, newTimestamp, songDuration);
+                nodeManager.moveHoldNote(draggedNoteId, newLane, newTimestamp, newEndTimestamp);
+            } else {
+                nodeManager.moveNote(draggedNoteId, newLane, newTimestamp);
+            }
         }
     } else if (isDragging && !ImGui::IsMouseDown(0)) {
         isDragging = false;
@@ -636,9 +785,18 @@ void Editor::handleKeyboardInput() {
 
         snapped = std::clamp(snapped, 0.0, songDuration);
 
-        int newNoteId = nodeManager.addNote(Core::Lane::TOP, snapped);
-        selectedNoteId = newNoteId;
-        hoveredNoteId = newNoteId;
+        bool shiftPressed = ImGui::GetIO().KeyShift;
+        if (shiftPressed) {
+            double endTime = snapped + gridSpacing;
+            endTime = std::clamp(endTime, snapped, songDuration);
+            int newNoteId = nodeManager.addHoldNote(Core::Lane::TOP, snapped, endTime);
+            selectedNoteId = newNoteId;
+            hoveredNoteId = newNoteId;
+        } else {
+            int newNoteId = nodeManager.addNote(Core::Lane::TOP, snapped);
+            selectedNoteId = newNoteId;
+            hoveredNoteId = newNoteId;
+        }
     }
     if (ImGui::IsKeyPressed(ImGuiKey_J)) {
         double snapped = currentPosition;
@@ -648,9 +806,18 @@ void Editor::handleKeyboardInput() {
 
         snapped = std::clamp(snapped, 0.0, songDuration);
 
-        int newNoteId = nodeManager.addNote(Core::Lane::BOTTOM, snapped);
-        selectedNoteId = newNoteId;
-        hoveredNoteId = newNoteId;
+        bool shiftPressed = ImGui::GetIO().KeyShift;
+        if (shiftPressed) {
+            double endTime = snapped + gridSpacing;
+            endTime = std::clamp(endTime, snapped, songDuration);
+            int newNoteId = nodeManager.addHoldNote(Core::Lane::BOTTOM, snapped, endTime);
+            selectedNoteId = newNoteId;
+            hoveredNoteId = newNoteId;
+        } else {
+            int newNoteId = nodeManager.addNote(Core::Lane::BOTTOM, snapped);
+            selectedNoteId = newNoteId;
+            hoveredNoteId = newNoteId;
+        }
     }
 }
 
@@ -1080,8 +1247,9 @@ void Editor::render() {
 
         ImGui::Text("Position: %d:%02d / %d:%02d", current_min, current_sec, total_min, total_sec);
         ImGui::Text("Zoom: %.2fx | Controls: Space=Play/Pause, <-/->=Seek, Enter=Move to song start, Scroll=Zoom", zoomLevel);
-        ImGui::Text("Editor: Click=Place Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust, Right-drag=Move Playhead");
+        ImGui::Text("Editor: Click=Place Note, Shift+Click=Place Hold Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust, Right-drag=Move Playhead");
         ImGui::Text("Multi-select: Ctrl+Click, Delete=Remove Selected, Notes List for bulk operations");
+        ImGui::Text("Note Types: TAP (press key), HOLD (hold key for duration)");
 
         if (isAnalyzing) {
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Analyzing waveform: %s (%.1f%%)", analysisProgress.c_str(), analysisProgressPercent);
@@ -1474,9 +1642,10 @@ void Editor::drawNotesList() {
 
     ImGui::Separator();
 
-    if (ImGui::BeginTable("NotesTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+    if (ImGui::BeginTable("NotesTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
         ImGui::TableSetupColumn("Select");
         ImGui::TableSetupColumn("ID");
+        ImGui::TableSetupColumn("Type");
         ImGui::TableSetupColumn("Lane");
         ImGui::TableSetupColumn("Time");
         ImGui::TableSetupColumn("Actions");
@@ -1499,15 +1668,28 @@ void Editor::drawNotesList() {
             ImGui::Text("%d", note.id);
 
             ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%s", note.lane == Core::Lane::TOP ? "Top" : "Bottom");
+            ImGui::Text("%s", note.type == Core::NoteType::HOLD ? "HOLD" : "TAP");
 
             ImGui::TableSetColumnIndex(3);
-            int minutes = (int)note.timestamp / 60;
-            int seconds = (int)note.timestamp % 60;
-            int centiseconds = (int)((note.timestamp - (int)note.timestamp) * 100);
-            ImGui::Text("%d:%02d.%02d", minutes, seconds, centiseconds);
+            ImGui::Text("%s", note.lane == Core::Lane::TOP ? "Top" : "Bottom");
 
             ImGui::TableSetColumnIndex(4);
+            if (note.type == Core::NoteType::HOLD) {
+                int start_min = (int)note.timestamp / 60;
+                int start_sec = (int)note.timestamp % 60;
+                int start_cs = (int)((note.timestamp - (int)note.timestamp) * 100);
+                int end_min = (int)note.endTimestamp / 60;
+                int end_sec = (int)note.endTimestamp % 60;
+                int end_cs = (int)((note.endTimestamp - (int)note.endTimestamp) * 100);
+                ImGui::Text("%d:%02d.%02d - %d:%02d.%02d", start_min, start_sec, start_cs, end_min, end_sec, end_cs);
+            } else {
+                int minutes = (int)note.timestamp / 60;
+                int seconds = (int)note.timestamp % 60;
+                int centiseconds = (int)((note.timestamp - (int)note.timestamp) * 100);
+                ImGui::Text("%d:%02d.%02d", minutes, seconds, centiseconds);
+            }
+
+            ImGui::TableSetColumnIndex(5);
             if (ImGui::Button(("Select##" + std::to_string(note.id)).c_str())) {
                 selectedNoteId = note.id;
             }
@@ -1563,24 +1745,111 @@ void Editor::drawPropertiesPanel() {
                 nodeManager.moveNote(selectedNote->id, 1, selectedNote->timestamp);
             }
 
-            ImGui::Text("Time (seconds):");
-            float timeValue = static_cast<float>(selectedNote->timestamp);
-            if (ImGui::InputFloat("##time", &timeValue, 0.1f, 1.0f, "%.3f")) {
-                double newTime = std::clamp(static_cast<double>(timeValue), 0.0, songDuration);
-                if (snapToGrid) {
-                    newTime = std::round(newTime / gridSpacing) * gridSpacing;
+            ImGui::Text("Note Type:");
+            bool isTap = (selectedNote->type == Core::NoteType::TAP);
+            bool isHold = (selectedNote->type == Core::NoteType::HOLD);
+
+            if (ImGui::RadioButton("TAP", isTap)) {
+                if (!isTap) {
+                    // Convert from HOLD to TAP note
+                    nodeManager.moveNote(selectedNote->id, selectedNote->lane, selectedNote->timestamp);
+                    // Refresh the note pointer after modification
+                    selectedNote = nodeManager.getNoteById(selectedNoteId);
                 }
-                nodeManager.moveNote(selectedNote->id, selectedNote->lane, newTime);
+            }
+            ImGui::SameLine();
+            if (ImGui::RadioButton("HOLD", isHold)) {
+                if (!isHold) {
+                    // Convert from TAP to HOLD note with default duration
+                    double endTime = selectedNote->timestamp + gridSpacing;
+                    endTime = std::clamp(endTime, selectedNote->timestamp, songDuration);
+                    nodeManager.moveHoldNote(selectedNote->id, selectedNote->lane, selectedNote->timestamp, endTime);
+                    // Refresh the note pointer after modification
+                    selectedNote = nodeManager.getNoteById(selectedNoteId);
+                }
             }
 
-            int minutes = (int)selectedNote->timestamp / 60;
-            int seconds = (int)selectedNote->timestamp % 60;
-            int centiseconds = (int)((selectedNote->timestamp - (int)selectedNote->timestamp) * 100);
-            ImGui::Text("Formatted: %d:%02d.%02d", minutes, seconds, centiseconds);
+            // Refresh the selected note pointer in case it was modified
+            selectedNote = nodeManager.getNoteById(selectedNoteId);
+            if (!selectedNote) return;
 
-            if (selectedNote->timestamp > 0) {
-                float bpmAtNote = 60.0f / selectedNote->timestamp;
-                ImGui::Text("BPM at note: %.1f", bpmAtNote);
+            if (selectedNote->type == Core::NoteType::HOLD) {
+                ImGui::Text("Start Time (seconds):");
+                float startTimeValue = static_cast<float>(selectedNote->timestamp);
+                if (ImGui::InputFloat("##startTime", &startTimeValue, 0.1f, 1.0f, "%.3f")) {
+                    double newStartTime = std::clamp(static_cast<double>(startTimeValue), 0.0, selectedNote->endTimestamp);
+                    if (snapToGrid) {
+                        newStartTime = std::round(newStartTime / gridSpacing) * gridSpacing;
+                    }
+                    nodeManager.moveHoldNote(selectedNote->id, selectedNote->lane, newStartTime, selectedNote->endTimestamp);
+                    // Refresh the note pointer after modification
+                    selectedNote = nodeManager.getNoteById(selectedNoteId);
+                }
+
+                ImGui::Text("End Time (seconds):");
+                float endTimeValue = static_cast<float>(selectedNote->endTimestamp);
+                if (ImGui::InputFloat("##endTime", &endTimeValue, 0.1f, 1.0f, "%.3f")) {
+                    double newEndTime = std::clamp(static_cast<double>(endTimeValue), selectedNote->timestamp, songDuration);
+                    if (snapToGrid) {
+                        newEndTime = std::round(newEndTime / gridSpacing) * gridSpacing;
+                    }
+                    nodeManager.moveHoldNote(selectedNote->id, selectedNote->lane, selectedNote->timestamp, newEndTime);
+                    // Refresh the note pointer after modification
+                    selectedNote = nodeManager.getNoteById(selectedNoteId);
+                }
+
+                ImGui::Text("Duration: %.3fs", selectedNote->endTimestamp - selectedNote->timestamp);
+
+                // Duration slider for hold notes
+                float duration = static_cast<float>(selectedNote->endTimestamp - selectedNote->timestamp);
+                if (ImGui::SliderFloat("##duration", &duration, 0.1f, 10.0f, "%.3fs")) {
+                    double newEndTime = selectedNote->timestamp + static_cast<double>(duration);
+                    newEndTime = std::clamp(newEndTime, selectedNote->timestamp, songDuration);
+                    if (snapToGrid) {
+                        newEndTime = std::round(newEndTime / gridSpacing) * gridSpacing;
+                    }
+                    nodeManager.moveHoldNote(selectedNote->id, selectedNote->lane, selectedNote->timestamp, newEndTime);
+                    // Refresh the note pointer after modification
+                    selectedNote = nodeManager.getNoteById(selectedNoteId);
+                }
+
+                int start_min = (int)selectedNote->timestamp / 60;
+                int start_sec = (int)selectedNote->timestamp % 60;
+                int start_cs = (int)((selectedNote->timestamp - (int)selectedNote->timestamp) * 100);
+                int end_min = (int)selectedNote->endTimestamp / 60;
+                int end_sec = (int)selectedNote->endTimestamp % 60;
+                int end_cs = (int)((selectedNote->endTimestamp - (int)selectedNote->endTimestamp) * 100);
+                ImGui::Text("Formatted: %d:%02d.%02d - %d:%02d.%02d", start_min, start_sec, start_cs, end_min, end_sec, end_cs);
+
+                if (ImGui::Button("Extend by 1 Beat")) {
+                    double newEndTime = selectedNote->endTimestamp + gridSpacing;
+                    newEndTime = std::clamp(newEndTime, selectedNote->timestamp, songDuration);
+                    nodeManager.moveHoldNote(selectedNote->id, selectedNote->lane, selectedNote->timestamp, newEndTime);
+                    // Refresh the note pointer after modification
+                    selectedNote = nodeManager.getNoteById(selectedNoteId);
+                }
+            } else {
+                ImGui::Text("Time (seconds):");
+                float timeValue = static_cast<float>(selectedNote->timestamp);
+                if (ImGui::InputFloat("##time", &timeValue, 0.1f, 1.0f, "%.3f")) {
+                    double newTime = std::clamp(static_cast<double>(timeValue), 0.0, songDuration);
+                    if (snapToGrid) {
+                        newTime = std::round(newTime / gridSpacing) * gridSpacing;
+                    }
+                    nodeManager.moveNote(selectedNote->id, selectedNote->lane, newTime);
+                    // Refresh the note pointer after modification
+                    selectedNote = nodeManager.getNoteById(selectedNoteId);
+                }
+
+                int minutes = (int)selectedNote->timestamp / 60;
+                int seconds = (int)selectedNote->timestamp % 60;
+                int centiseconds = (int)((selectedNote->timestamp - (int)selectedNote->timestamp) * 100);
+                ImGui::Text("Formatted: %d:%02d.%02d", minutes, seconds, centiseconds);
+
+                if (selectedNote->timestamp > 0) {
+                    float bpmAtNote = 60.0f / selectedNote->timestamp;
+                    ImGui::Text("BPM at note: %.1f", bpmAtNote);
+                }
             }
 
             ImGui::Separator();
@@ -1641,7 +1910,7 @@ bool Editor::saveChartFile(const std::string& filepath) {
     ChartHeader header;
     memset(&header, 0, sizeof(ChartHeader));
     strcpy(header.magic, "NOTARHYTHM");
-    header.version = 1;
+    header.version = 2; // Updated version for TAP/HOLD support
     header.headerSize = sizeof(ChartHeader);
     header.audioSize = static_cast<uint32_t>(audioData.size());
     header.notesCount = static_cast<uint32_t>(nodeManager.getNotes().size());
@@ -1672,7 +1941,9 @@ bool Editor::saveChartFile(const std::string& filepath) {
     for (const auto& note : nodeManager.getNotes()) {
         file.write(reinterpret_cast<const char*>(&note.id), sizeof(note.id));
         file.write(reinterpret_cast<const char*>(&note.lane), sizeof(note.lane));
+        file.write(reinterpret_cast<const char*>(&note.type), sizeof(note.type));
         file.write(reinterpret_cast<const char*>(&note.timestamp), sizeof(note.timestamp));
+        file.write(reinterpret_cast<const char*>(&note.endTimestamp), sizeof(note.endTimestamp));
     }
 
     file.close();
@@ -1698,7 +1969,7 @@ bool Editor::loadChartFile(const std::string& filepath) {
         return false;
     }
 
-    if (header.version != 1) {
+    if (header.version < 1 || header.version > 2) {
         std::cerr << "Unsupported chart file version: " << header.version << std::endl;
         return false;
     }
@@ -1741,18 +2012,34 @@ bool Editor::loadChartFile(const std::string& filepath) {
     for (uint32_t i = 0; i < header.notesCount; ++i) {
         int id;
         Core::Lane lane;
+        Core::NoteType type;
         double timestamp;
+        double endTimestamp;
 
         file.read(reinterpret_cast<char*>(&id), sizeof(id));
         file.read(reinterpret_cast<char*>(&lane), sizeof(lane));
-        file.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
+
+        if (header.version >= 2) {
+            file.read(reinterpret_cast<char*>(&type), sizeof(type));
+            file.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
+            file.read(reinterpret_cast<char*>(&endTimestamp), sizeof(endTimestamp));
+        } else {
+            // Version 1 compatibility - all notes are TAP notes
+            type = Core::NoteType::TAP;
+            file.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
+            endTimestamp = timestamp;
+        }
 
         if (!file.good()) {
             std::cerr << "Failed to read note " << i << std::endl;
             break;
         }
 
-        nodeManager.addNoteWithId(id, static_cast<int>(lane), timestamp);
+        if (type == Core::NoteType::HOLD) {
+            nodeManager.addHoldNoteWithId(id, static_cast<int>(lane), timestamp, endTimestamp);
+        } else {
+            nodeManager.addNoteWithId(id, static_cast<int>(lane), timestamp);
+        }
     }
 
     file.close();
