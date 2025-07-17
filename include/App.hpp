@@ -2,7 +2,7 @@
 
 #include "imgui.h"
 
-#include "Timeline.hpp"
+#include "Editor.hpp"
 #include "SoundManager.hpp"
 
 namespace App
@@ -16,8 +16,6 @@ namespace App
             ~Config() = default;
 
             void configure();
-
-            ImGuiIO& getIO();
     };
 
     void run();
