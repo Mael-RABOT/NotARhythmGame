@@ -1,7 +1,5 @@
 #pragma once
 
-#include "imgui.h"
-#include "SoundManager.hpp"
 #include <string>
 #include <memory>
 #include <vector>
@@ -11,33 +9,36 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <array>
+#include <tuple>
+
+#include "imgui.h"
+
+#include "SoundManager.hpp"
+#include "NodeManager.hpp"
 
 #define BASS_DEFAULT_DEVICE -1
 #define BASS_MAX_FREQUENCY 44100
 #define BASS_MIN_FREQUENCY 0
 
+#define TIMELINE_OFFSET 4.0f
+
 namespace App {
 namespace Windows {
 
-    struct Note {
-        int id;
-        int lane; // 0 = top, 1 = bottom // TODO: Use enum
-        double timestamp;
+    struct SeekPerZoom {
+        static constexpr std::array<std::tuple<float, float>, 4> data = {
+            std::tuple<float, float>{1.0f, 5.0f},
+            std::tuple<float, float>{5.0f, 2.5f},
+            std::tuple<float, float>{10.0f, 1.0f},
+            std::tuple<float, float>{15.0f, 0.250f},
+        };
     };
 
-    class NodeManager { // TODO: Move into Core namespace
-    public:
-        NodeManager();
-        int addNote(int lane, double timestamp);
-        void removeNote(int id);
-        void moveNote(int id, int newLane, double newTimestamp);
-        Note* getNoteById(int id);
-        std::vector<Note>& getNotes();
-        void clear();
-        int getNextId() const;
-    private:
-        std::vector<Note> notes;
-        int nextId;
+    enum SortOrder {
+        TIME = 0,
+        LANE = 1,
+        ID = 2,
     };
 
     class Editor {
@@ -55,6 +56,7 @@ namespace Windows {
             float bpm;
             bool showGrid;
             bool enableAutoscroll;
+            float markerInterval;
             float gridSpacing; // in seconds, calculated from BPM
 
             // UI state
@@ -72,7 +74,7 @@ namespace Windows {
             std::vector<std::string> files;
             int selectedFileIndex;
 
-            NodeManager nodeManager;
+            App::Core::NodeManager nodeManager;
             int selectedNoteId;
             int hoveredNoteId;
             std::vector<int> selectedNoteIds;
@@ -81,8 +83,9 @@ namespace Windows {
             bool showProperties;
             bool snapToGrid;
             bool showNoteIds;
+            bool showMilliseconds;
             float noteRadius;
-            int sortOrder; // 0 = by time, 1 = by lane, 2 = by id // TODO: Use enum
+            SortOrder sortOrder;
 
             void loadSong(const std::string& filepath);
             void updatePlayback();
@@ -97,6 +100,7 @@ namespace Windows {
             void drawTimelineLanes();
             void handleNotePlacementAndInteraction();
             void drawNotesList();
+            void jumpToPosition(Core::Note* note);
             void drawPropertiesPanel();
             void sortNotes();
 

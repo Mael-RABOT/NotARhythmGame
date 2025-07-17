@@ -3,36 +3,6 @@
 namespace App {
 namespace Windows {
 
-NodeManager::NodeManager() : nextId(1) {}
-
-int NodeManager::addNote(int lane, double timestamp) {
-    notes.push_back({nextId, lane, timestamp});
-    return nextId++;
-}
-
-void NodeManager::removeNote(int id) {
-    notes.erase(std::remove_if(notes.begin(), notes.end(), [id](const Note& n){ return n.id == id; }), notes.end());
-}
-
-void NodeManager::moveNote(int id, int newLane, double newTimestamp) {
-    for (auto& n : notes) {
-        if (n.id == id) {
-            n.lane = newLane;
-            n.timestamp = newTimestamp;
-            break;
-        }
-    }
-}
-
-Note* NodeManager::getNoteById(int id) {
-    for (auto& n : notes) if (n.id == id) return &n;
-    return nullptr;
-}
-
-std::vector<Note>& NodeManager::getNotes() { return notes; }
-void NodeManager::clear() { notes.clear(); nextId = 1; }
-int NodeManager::getNextId() const { return nextId; }
-
 void Editor::drawTimelineLanes() {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 content_pos = ImGui::GetCursorScreenPos();
@@ -112,7 +82,7 @@ void Editor::drawTimelineLanes() {
             noteColor = IM_COL32(255, 200, 100, 200);
             borderColor = IM_COL32(255, 180, 80, 255);
         } else {
-            if (note.lane == 0) { // TODO: Use enum
+            if (note.lane == Core::Lane::TOP) {
                 noteColor = IM_COL32(100, 150, 255, 200);
                 borderColor = IM_COL32(80, 120, 200, 255);
             } else {
@@ -182,7 +152,7 @@ void Editor::drawTimelineLanes() {
                 "Drag to move",
                 note.id,
                 selectionStatus,
-                note.lane == 0 ? "Top" : "Bottom", // TODO: use enum
+                note.lane == Core::Lane::TOP ? "Top" : "Bottom",
                 note.timestamp,
                 note.timestamp > 0 ? 60.0 / note.timestamp : 0.0
             );
@@ -292,7 +262,7 @@ void Editor::handleNotePlacementAndInteraction() {
         }
 
         if (ImGui::IsMouseDown(0) && selectedNoteId != -1 && !isDragging) {
-            Note* selectedNote = nodeManager.getNoteById(selectedNoteId);
+            Core::Note* selectedNote = nodeManager.getNoteById(selectedNoteId);
             if (selectedNote) {
                 float note_x = content_pos.x + (selectedNote->timestamp - visible_start) * pixels_per_second;
                 float note_y = timeline_y + selectedNote->lane * laneHeight + laneHeight * 0.5f;
@@ -343,32 +313,42 @@ void Editor::handleNotePlacementAndInteraction() {
             }
         }
 
-        Note* selectedNote = nodeManager.getNoteById(selectedNoteId); // TODO: Disable playhead movement when if selectedNote
+        Core::Note* selectedNote = nodeManager.getNoteById(selectedNoteId);
         if (selectedNote) {
+            float seekAmount = 5.0f;
+            for (const auto& [level, amount] : SeekPerZoom::data) {
+                if (zoomLevel >= level) {
+                    seekAmount = amount;
+                } else {
+                    break;
+                 }
+            }
+
             bool modified = false;
             double newTimestamp = selectedNote->timestamp;
             int newLane = selectedNote->lane;
 
             if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) && ImGui::GetIO().KeyCtrl) {
-                newTimestamp -= gridSpacing;
+                newTimestamp -= seekAmount;
                 modified = true;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && ImGui::GetIO().KeyCtrl) {
-                newTimestamp += gridSpacing;
+                newTimestamp += seekAmount;
                 modified = true;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && ImGui::GetIO().KeyCtrl) {
-                newLane = 0;
+                newLane = Core::Lane::TOP;
                 modified = true;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && ImGui::GetIO().KeyCtrl) {
-                newLane = 1;
+                newLane = Core::Lane::BOTTOM;
                 modified = true;
             }
 
             if (modified) {
                 newTimestamp = std::clamp(newTimestamp, 0.0, songDuration);
                 nodeManager.moveNote(selectedNoteId, newLane, newTimestamp);
+                jumpToPosition(selectedNote);
             }
         }
     }
@@ -389,6 +369,7 @@ Editor::Editor()
       bpm(120.0f),
       showGrid(true),
       enableAutoscroll(true),
+      markerInterval(5.0),
       gridSpacing(0.5f),
       timelineWidth(800.0f),
       timelineHeight(200.0f),
@@ -405,8 +386,9 @@ Editor::Editor()
       showProperties(false),
       snapToGrid(true),
       showNoteIds(false),
+      showMilliseconds(false),
       noteRadius(12.0f),
-      sortOrder(0) {
+      sortOrder(SortOrder::TIME) {
 
     if (!soundManager->initialize(BASS_DEFAULT_DEVICE, BASS_MAX_FREQUENCY, BASS_MIN_FREQUENCY)) {
         std::cerr << "Failed to initialize sound manager" << std::endl;
@@ -489,7 +471,20 @@ void Editor::handleKeyboardInput() {
         }
     }
 
-    float seekAmount = 5.0f; // TODO: Lower amount based on zoom
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+        double zero = 0;
+        currentPosition = zero;
+        soundManager->seekTo("timeline_song", currentPosition);
+    }
+
+    float seekAmount = 5.0f;
+    for (const auto& [level, amount] : SeekPerZoom::data) {
+        if (zoomLevel >= level) {
+            seekAmount = amount;
+        } else {
+            break;
+        }
+    }
 
     if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
         double newPosition = std::max(0.0, currentPosition - seekAmount);
@@ -503,6 +498,31 @@ void Editor::handleKeyboardInput() {
         if (soundManager->seekTo("timeline_song", newPosition)) {
             currentPosition = newPosition;
         }
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_F)) {
+        double snapped = currentPosition;
+        if (snapToGrid) {
+            snapped = std::round(currentPosition / gridSpacing) * gridSpacing;
+        }
+
+        snapped = std::clamp(snapped, 0.0, songDuration);
+
+        int newNoteId = nodeManager.addNote(Core::Lane::TOP, snapped);
+        selectedNoteId = newNoteId;
+        hoveredNoteId = newNoteId;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_J)) {
+        double snapped = currentPosition;
+        if (snapToGrid) {
+            snapped = std::round(currentPosition / gridSpacing) * gridSpacing;
+        }
+
+        snapped = std::clamp(snapped, 0.0, songDuration);
+
+        int newNoteId = nodeManager.addNote(Core::Lane::BOTTOM, snapped);
+        selectedNoteId = newNoteId;
+        hoveredNoteId = newNoteId;
     }
 }
 
@@ -524,13 +544,10 @@ void Editor::drawTimelineRuler() {
     float visible_start = scrollOffset;
     float visible_end = visible_start + visible_duration;
 
-    float marker_interval = 1.0f;
-    bool show_milliseconds = false;
-
     // Find the first marker that should be visible
-    float first_marker = std::floor(visible_start / marker_interval) * marker_interval;
+    float first_marker = std::floor(visible_start / markerInterval) * markerInterval;
 
-    for (float time = first_marker; time <= visible_end + marker_interval; time += marker_interval) {
+    for (float time = first_marker; time <= visible_end + markerInterval; time += markerInterval) {
         float x = content_pos.x + (time - visible_start) * pixels_per_second;
 
         if (x >= content_pos.x - 50 && x <= content_pos.x + timelineWidth + 50) {
@@ -542,7 +559,7 @@ void Editor::drawTimelineRuler() {
             );
 
             char time_label[32];
-            if (show_milliseconds) {
+            if (showMilliseconds) {
                 int minutes = (int)time / 60;
                 int seconds = (int)time % 60;
                 int milliseconds = (int)((time - (int)time) * 1000);
@@ -604,9 +621,10 @@ void Editor::drawPlaybackCursor() {
         float headSize = 8.0f;
 
         // Top head
-        ImVec2 topTriangleTop = ImVec2(cursor_x - headSize, timeline_y - timelineHeight);
-        ImVec2 topTriangleBottom = ImVec2(cursor_x + headSize, timeline_y - timelineHeight);
-        ImVec2 topTriangleTip = ImVec2(cursor_x, timeline_y - timelineHeight + headSize);
+        float topLaneY = timeline_y - timelineHeight - TIMELINE_OFFSET;
+        ImVec2 topTriangleTop = ImVec2(cursor_x - headSize, topLaneY);
+        ImVec2 topTriangleBottom = ImVec2(cursor_x + headSize, topLaneY);
+        ImVec2 topTriangleTip = ImVec2(cursor_x, topLaneY + headSize);
 
         draw_list->AddTriangleFilled(
             ImVec2(topTriangleTop.x + 1, topTriangleTop.y + 1),
@@ -631,7 +649,7 @@ void Editor::drawPlaybackCursor() {
         );
 
         // Bottom head
-        float bottomLaneY = timeline_y;
+        float bottomLaneY = timeline_y - TIMELINE_OFFSET;
         ImVec2 bottomTriangleTop = ImVec2(cursor_x - headSize, bottomLaneY);
         ImVec2 bottomTriangleBottom = ImVec2(cursor_x + headSize, bottomLaneY);
         ImVec2 bottomTriangleTip = ImVec2(cursor_x, bottomLaneY - headSize);
@@ -665,7 +683,7 @@ void Editor::drawPlaybackCursor() {
         snprintf(timeLabel, sizeof(timeLabel), "%d:%02d.%03d", current_min, current_sec, current_ms);
 
         ImVec2 textSize = ImGui::CalcTextSize(timeLabel);
-        ImVec2 textPos = ImVec2(cursor_x - textSize.x * 0.5f, timeline_y - timelineHeight - headSize - textSize.y - 5);
+        ImVec2 textPos = ImVec2(cursor_x - textSize.x * 0.5f, topLaneY - headSize - textSize.y - TIMELINE_OFFSET);
 
         draw_list->AddRectFilled(
             ImVec2(textPos.x - 2, textPos.y - 2),
@@ -801,6 +819,9 @@ void Editor::render() {
     ImGui::SameLine();
     ImGui::Checkbox("Show Note IDs", &showNoteIds);
 
+    ImGui::SameLine();
+    ImGui::Checkbox("Show milliseconds", &showMilliseconds);
+
     ImGui::Text("BPM:");
     ImGui::SameLine();
     if (ImGui::InputFloat("##bpm", &bpm, 1.0f, 10.0f, "%.1f", ImGuiInputTextFlags_CharsDecimal)) {
@@ -831,18 +852,21 @@ void Editor::render() {
         targetScrollOffset = 0.0f;
     }
 
+    ImGui::Text("Marker Interval:");
     ImGui::SameLine();
-    if (ImGui::Button("Fit to Window", ImVec2(80, 20))) {
-        zoomLevel = 1.0f;
-        scrollOffset = 0.0f;
-        targetScrollOffset = 0.0f;
+    if (ImGui::SliderFloat("##markerInterval", &markerInterval, 0.250f, 10.0f, "%.2fs")) {
+        markerInterval = std::max(0.250f, markerInterval);
+        calculateGridSpacing();
     }
 
     if (isSongLoaded) {
-        ImGui::Text("Song Duration: %.2fs", songDuration);
-        ImGui::Text("Current Position: %.2fs", currentPosition);
-        ImGui::Text("Status: %s", isPlaying ? "Playing" : "Paused");
-        ImGui::Text("Notes: %zu | Selected: %d", nodeManager.getNotes().size(), selectedNoteId);
+        ImGui::Text("Song Duration: %.2fs //", songDuration);
+        ImGui::SameLine();
+        ImGui::Text("Current Position: %.2fs //", currentPosition);
+        ImGui::SameLine();
+        ImGui::Text("Status: %s //", isPlaying ? "Playing" : "Paused");
+        ImGui::SameLine();
+        ImGui::Text("Notes: %zu | Selected: %s", nodeManager.getNotes().size(), selectedNoteId == -1 ? "None" : std::to_string(selectedNoteId).c_str());
     }
 
     ImGui::EndGroup();
@@ -900,8 +924,8 @@ void Editor::render() {
         int total_sec = (int)songDuration % 60;
 
         ImGui::Text("Position: %d:%02d / %d:%02d", current_min, current_sec, total_min, total_sec);
-        ImGui::Text("Zoom: %.2fx | Controls: Space=Play/Pause, <-/->=Seek, Scroll=Zoom", zoomLevel);
-        ImGui::Text("Editor: Click=Place Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust (To Be Implemented)");
+        ImGui::Text("Zoom: %.2fx | Controls: Space=Play/Pause, <-/->=Seek, Enter=Move to song start, Scroll=Zoom", zoomLevel);
+        ImGui::Text("Editor: Click=Place Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust");
         ImGui::Text("Multi-select: Ctrl+Click, Delete=Remove Selected, Notes List for bulk operations");
 
         ImGui::EndGroup();
@@ -1157,18 +1181,18 @@ void Editor::drawNotesList() {
 
     ImGui::Text("Sort by:");
     ImGui::SameLine();
-    if (ImGui::RadioButton("Time", sortOrder == 0)) { // TODO: use enum
-        sortOrder = 0;
+    if (ImGui::RadioButton("Time", sortOrder == SortOrder::TIME)) {
+        sortOrder = SortOrder::TIME;
         sortNotes();
     }
     ImGui::SameLine();
-    if (ImGui::RadioButton("Lane", sortOrder == 1)) {
-        sortOrder = 1;
+    if (ImGui::RadioButton("Lane", sortOrder == SortOrder::LANE)) {
+        sortOrder = SortOrder::LANE;
         sortNotes();
     }
     ImGui::SameLine();
-    if (ImGui::RadioButton("ID", sortOrder == 2)) {
-        sortOrder = 2;
+    if (ImGui::RadioButton("ID", sortOrder == SortOrder::ID)) {
+        sortOrder = SortOrder::ID;
         sortNotes();
     }
 
@@ -1228,7 +1252,7 @@ void Editor::drawNotesList() {
             ImGui::Text("%d", note.id);
 
             ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%s", note.lane == 0 ? "Top" : "Bottom"); // TODO: use enum
+            ImGui::Text("%s", note.lane == Core::Lane::TOP ? "Top" : "Bottom");
 
             ImGui::TableSetColumnIndex(3);
             int minutes = (int)note.timestamp / 60;
@@ -1255,23 +1279,40 @@ void Editor::drawNotesList() {
     ImGui::End();
 }
 
+void Editor::jumpToPosition(Core::Note* note) {
+    currentPosition = note->timestamp;
+    soundManager->seekTo("timeline_song", currentPosition);
+
+    float visible_duration = songDuration / zoomLevel;
+    float visible_start = scrollOffset;
+    float visible_end = visible_start + visible_duration;
+    float margin = visible_duration * 0.1f;
+
+    if (note->timestamp < visible_start + margin || note->timestamp > visible_end - margin) {
+        float new_scroll = note->timestamp - (visible_duration * 0.5f);
+        new_scroll = std::clamp(new_scroll, 0.0f, std::max(0.0f, static_cast<float>(songDuration - visible_duration)));
+        scrollOffset = new_scroll;
+        targetScrollOffset = new_scroll;
+    }
+}
+
 void Editor::drawPropertiesPanel() {
     if (!showProperties) return;
 
     ImGui::Begin("Properties", &showProperties, ImGuiWindowFlags_AlwaysAutoResize);
 
     if (selectedNoteId != -1) {
-        Note* selectedNote = nodeManager.getNoteById(selectedNoteId);
+        Core::Note* selectedNote = nodeManager.getNoteById(selectedNoteId);
         if (selectedNote) {
             ImGui::Text("Selected Note #%d", selectedNote->id);
             ImGui::Separator();
 
             ImGui::Text("Lane:");
-            if (ImGui::RadioButton("Top", selectedNote->lane == 0)) { // TODO:  Use enum
+            if (ImGui::RadioButton("Top", selectedNote->lane == Core::Lane::TOP)) {
                 nodeManager.moveNote(selectedNote->id, 0, selectedNote->timestamp);
             }
             ImGui::SameLine();
-            if (ImGui::RadioButton("Bottom", selectedNote->lane == 1)) {
+            if (ImGui::RadioButton("Bottom", selectedNote->lane == Core::Lane::BOTTOM)) {
                 nodeManager.moveNote(selectedNote->id, 1, selectedNote->timestamp);
             }
 
@@ -1304,20 +1345,7 @@ void Editor::drawPropertiesPanel() {
 
             ImGui::SameLine();
             if (ImGui::Button("Jump to Note")) {
-                currentPosition = selectedNote->timestamp;
-                soundManager->seekTo("timeline_song", currentPosition);
-
-                float visible_duration = songDuration / zoomLevel;
-                float visible_start = scrollOffset;
-                float visible_end = visible_start + visible_duration;
-                float margin = visible_duration * 0.1f;
-
-                if (selectedNote->timestamp < visible_start + margin || selectedNote->timestamp > visible_end - margin) {
-                    float new_scroll = selectedNote->timestamp - (visible_duration * 0.5f);
-                    new_scroll = std::clamp(new_scroll, 0.0f, std::max(0.0f, static_cast<float>(songDuration - visible_duration)));
-                    scrollOffset = new_scroll;
-                    targetScrollOffset = new_scroll;
-                }
+                jumpToPosition(selectedNote);
             }
         }
     } else {
@@ -1329,22 +1357,22 @@ void Editor::drawPropertiesPanel() {
 }
 
 void Editor::sortNotes() {
-    std::vector<Note>& notes = nodeManager.getNotes();
+    std::vector<Core::Note>& notes = nodeManager.getNotes();
 
     switch (sortOrder) {
-        case 0: // TODO: Use enum
-            std::sort(notes.begin(), notes.end(), [](const Note& a, const Note& b) {
+        case SortOrder::TIME:
+            std::sort(notes.begin(), notes.end(), [](const Core::Note& a, const Core::Note& b) {
                 return a.timestamp < b.timestamp;
             });
             break;
-        case 1:
-            std::sort(notes.begin(), notes.end(), [](const Note& a, const Note& b) {
+        case SortOrder::LANE:
+            std::sort(notes.begin(), notes.end(), [](const Core::Note& a, const Core::Note& b) {
                 if (a.lane != b.lane) return a.lane < b.lane;
                 return a.timestamp < b.timestamp;
             });
             break;
-        case 2:
-            std::sort(notes.begin(), notes.end(), [](const Note& a, const Note& b) {
+        case SortOrder::ID:
+            std::sort(notes.begin(), notes.end(), [](const Core::Note& a, const Core::Note& b) {
                 return a.id < b.id;
             });
             break;
