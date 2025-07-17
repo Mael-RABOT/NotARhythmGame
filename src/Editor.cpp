@@ -1,4 +1,5 @@
 #include "Editor.hpp"
+#include <thread>
 
 namespace App {
 namespace Windows {
@@ -41,7 +42,6 @@ void Editor::drawTimelineLanes() {
             2.0f
         );
 
-        // Lane label
         const char* laneNames[2] = { "TOP", "BOTTOM" };
         ImVec2 textSize = ImGui::CalcTextSize(laneNames[lane]);
         ImVec2 textPos = ImVec2(content_pos.x + 5, y0 + (laneHeight - textSize.y) * 0.5f);
@@ -195,9 +195,19 @@ void Editor::handleNotePlacementAndInteraction() {
     static ImVec2 dragStartPos;
 
     if (ImGui::IsMouseClicked(0) && !ImGui::IsItemHovered()) {
-        selectedNoteId = -1;
-        selectedNoteIds.clear();
-        hoveredNoteId = -1;
+        bool clickingOnOtherWindow = false;
+        if (showNotesList && ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+            clickingOnOtherWindow = true;
+        }
+        if (showProperties && ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+            clickingOnOtherWindow = true;
+        }
+
+        if (!clickingOnOtherWindow) {
+            selectedNoteId = -1;
+            selectedNoteIds.clear();
+            hoveredNoteId = -1;
+        }
     }
 
     if (ImGui::IsItemHovered()) {
@@ -359,6 +369,48 @@ void Editor::handleNotePlacementAndInteraction() {
         }
     }
 
+    static bool isRightDragging = false;
+    static ImVec2 rightDragStartPos;
+
+    if (ImGui::IsMouseClicked(1) && ImGui::IsItemHovered()) {
+        isRightDragging = true;
+        rightDragStartPos = ImGui::GetIO().MousePos;
+    }
+
+    if (isRightDragging && ImGui::IsMouseDown(1)) {
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        float rel_x = mouse.x - content_pos.x;
+
+        if (rel_x >= 0 && rel_x <= timelineWidth) {
+            double newPosition = visible_start + (rel_x / pixels_per_second);
+            newPosition = std::clamp(newPosition, 0.0, songDuration);
+
+            if (soundManager) {
+                soundManager->setPosition("timeline_song", newPosition);
+                currentPosition = newPosition;
+
+                if (enableAutoscroll) {
+                    float visible_duration = songDuration / zoomLevel;
+                    float border_threshold = visible_duration * 0.2f;
+
+                    if (newPosition < scrollOffset + border_threshold) {
+                        float target_scroll = newPosition - (visible_duration * 0.3f);
+                        target_scroll = std::max(0.0f, target_scroll);
+                        scrollOffset = target_scroll;
+                        targetScrollOffset = target_scroll;
+                    } else if (newPosition > scrollOffset + visible_duration - border_threshold) {
+                        float target_scroll = newPosition - (visible_duration * 0.7f);
+                        target_scroll = std::min(target_scroll, std::max(0.0f, static_cast<float>(songDuration - visible_duration)));
+                        scrollOffset = target_scroll;
+                        targetScrollOffset = target_scroll;
+                    }
+                }
+            }
+        }
+    } else if (isRightDragging && !ImGui::IsMouseDown(1)) {
+        isRightDragging = false;
+    }
+
     if (!ImGui::IsItemHovered()) {
         hoveredNoteId = -1;
     }
@@ -372,6 +424,12 @@ Editor::Editor()
       isPlaying(false),
       currentPosition(0.0),
       songDuration(0.0),
+      audioAnalyzer(std::make_unique<AudioAnalyzer>()),
+      showWaveform(true),
+      waveformLoaded(false),
+      isAnalyzing(false),
+      analysisProgress(""),
+      analysisProgressPercent(0.0f),
       bpm(120.0f),
       showGrid(true),
       enableAutoscroll(true),
@@ -382,8 +440,8 @@ Editor::Editor()
       zoomLevel(1.0f),
       scrollOffset(0.0f),
       targetScrollOffset(0.0f),
-      minZoomLevel(1.0f),
-      maxZoomLevel(20.0f),
+      minZoomLevel(MIN_ZOOM_LEVEL),
+      maxZoomLevel(MAX_ZOOM_LEVEL),
       showFileDialog(false),
       selectedFileIndex(-1),
       selectedNoteId(-1),
@@ -423,6 +481,12 @@ Editor::Editor(Core::SoundManager* soundManager)
       isPlaying(false),
       currentPosition(0.0),
       songDuration(0.0),
+      audioAnalyzer(std::make_unique<AudioAnalyzer>()),
+      showWaveform(true),
+      waveformLoaded(false),
+      isAnalyzing(false),
+      analysisProgress(""),
+      analysisProgressPercent(0.0f),
       bpm(120.0f),
       showGrid(true),
       enableAutoscroll(true),
@@ -433,8 +497,8 @@ Editor::Editor(Core::SoundManager* soundManager)
       zoomLevel(1.0f),
       scrollOffset(0.0f),
       targetScrollOffset(0.0f),
-      minZoomLevel(1.0f),
-      maxZoomLevel(20.0f),
+      minZoomLevel(MIN_ZOOM_LEVEL),
+      maxZoomLevel(MAX_ZOOM_LEVEL),
       showFileDialog(false),
       selectedFileIndex(-1),
       selectedNoteId(-1),
@@ -505,7 +569,6 @@ void Editor::loadSong(const std::string& filepath) {
         isPlaying = false;
 
         songDuration = soundManager->getDuration("timeline_song");
-
     } else {
         std::cerr << "Failed to load song: " << filepath << std::endl;
     }
@@ -609,7 +672,6 @@ void Editor::drawTimelineRuler() {
     float visible_start = scrollOffset;
     float visible_end = visible_start + visible_duration;
 
-    // Find the first marker that should be visible
     float first_marker = std::floor(visible_start / markerInterval) * markerInterval;
 
     for (float time = first_marker; time <= visible_end + markerInterval; time += markerInterval) {
@@ -892,6 +954,28 @@ void Editor::render() {
     ImGui::SameLine();
     ImGui::Checkbox("Show milliseconds", &showMilliseconds);
 
+    ImGui::SameLine();
+    ImGui::Checkbox("Show Waveform", &showWaveform);
+
+    ImGui::SameLine();
+    if (isSongLoaded && !isAnalyzing && !waveformLoaded) {
+        if (ImGui::Button("Generate Waveform", ImVec2(140, 20))) {
+            analyzeAudioFile(currentSongPath);
+        }
+    } else if (isAnalyzing) {
+        ImGui::BeginDisabled();
+        ImGui::Button("Generating...", ImVec2(140, 20));
+        ImGui::EndDisabled();
+    } else if (waveformLoaded) {
+        if (ImGui::Button("Regenerate Waveform", ImVec2(140, 20))) {
+            analyzeAudioFile(currentSongPath);
+        }
+    } else {
+        ImGui::BeginDisabled();
+        ImGui::Button("Generate Waveform", ImVec2(140, 20));
+        ImGui::EndDisabled();
+    }
+
     ImGui::Text("BPM:");
     ImGui::SameLine();
     if (ImGui::InputFloat("##bpm", &bpm, 1.0f, 10.0f, "%.1f", ImGuiInputTextFlags_CharsDecimal)) {
@@ -980,6 +1064,7 @@ void Editor::render() {
     }
 
     drawTimelineGrid();
+    drawWaveform();
     drawTimelineLanes();
     handleNotePlacementAndInteraction();
     drawPlaybackCursor();
@@ -995,8 +1080,45 @@ void Editor::render() {
 
         ImGui::Text("Position: %d:%02d / %d:%02d", current_min, current_sec, total_min, total_sec);
         ImGui::Text("Zoom: %.2fx | Controls: Space=Play/Pause, <-/->=Seek, Enter=Move to song start, Scroll=Zoom", zoomLevel);
-        ImGui::Text("Editor: Click=Place Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust");
+        ImGui::Text("Editor: Click=Place Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust, Right-drag=Move Playhead");
         ImGui::Text("Multi-select: Ctrl+Click, Delete=Remove Selected, Notes List for bulk operations");
+
+        if (isAnalyzing) {
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Analyzing waveform: %s (%.1f%%)", analysisProgress.c_str(), analysisProgressPercent);
+            ImGui::ProgressBar(analysisProgressPercent / 100.0f, ImVec2(-1, 0), "");
+        } else if (waveformLoaded && showWaveform) {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Waveform loaded (%zu samples, %.1fs duration)",
+                              waveformData.data.size(), waveformData.duration);
+        } else if (showWaveform && isSongLoaded && !waveformLoaded) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Waveform not generated - click 'Generate Waveform' to analyze audio");
+        }
+
+        if (showWaveform && waveformLoaded) {
+            ImGui::Separator();
+            ImGui::Text("Waveform Colors:");
+
+            ImGui::BeginGroup();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+            ImGui::Text("Strong Bass/Rhythm");
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.4f, 1.0f));
+            ImGui::Text("Moderate Intensity");
+            ImGui::PopStyleColor();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+            ImGui::Text("Low Intensity");
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
+            ImGui::Text("Very Low");
+            ImGui::PopStyleColor();
+
+            ImGui::EndGroup();
+        }
 
         ImGui::EndGroup();
     }
@@ -1688,6 +1810,147 @@ void Editor::extractAudioFromChart(const std::string& chartPath, const std::stri
     file.close();
 
     writeAudioFile(outputPath, audioData);
+}
+
+void Editor::analyzeAudioFile(const std::string& filepath) {
+    if (!audioAnalyzer) return;
+
+    waveformLoaded = false;
+    isAnalyzing = true;
+    analysisProgress = "Starting analysis...";
+    analysisProgressPercent = 0.0f;
+
+    audioAnalyzer->setProgressCallback([this](const AnalysisProgress& progress) {
+        this->onAnalysisProgress(progress);
+    });
+
+    std::thread analysisThread([this, filepath]() {
+        try {
+            waveformData = audioAnalyzer->analyzeAudio(filepath);
+            waveformLoaded = true;
+        } catch (const std::exception& e) {
+            std::cerr << "Waveform analysis failed: " << e.what() << std::endl;
+        }
+        isAnalyzing = false;
+    });
+
+    analysisThread.detach();
+}
+
+void Editor::onAnalysisProgress(const AnalysisProgress& progress) {
+    analysisProgress = progress.stage;
+    analysisProgressPercent = static_cast<float>(progress.progress);
+}
+
+void Editor::drawWaveform() {
+    if (!showWaveform || !waveformLoaded || waveformData.data.empty()) {
+        if (showWaveform && isSongLoaded && !waveformLoaded && !isAnalyzing) {
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 content_pos = ImGui::GetCursorScreenPos();
+            float timeline_y = content_pos.y + 30.0f;
+
+            float waveformHeight = timelineHeight * 0.4f;
+            float waveformY = timeline_y + (timelineHeight - waveformHeight) * 0.5f;
+
+            draw_list->AddRectFilled(
+                ImVec2(content_pos.x, waveformY),
+                ImVec2(content_pos.x + timelineWidth, waveformY + waveformHeight),
+                IM_COL32(40, 40, 40, 100)
+            );
+
+            const char* text = "\n\nWaveform not available";
+            ImVec2 textSize = ImGui::CalcTextSize(text);
+            ImVec2 textPos = ImVec2(
+                content_pos.x + (timelineWidth - textSize.x) * 0.5f,
+                waveformY + (waveformHeight - textSize.y) * 0.5f
+            );
+
+            draw_list->AddText(textPos, IM_COL32(255, 165, 0, 200), text);
+        }
+        return;
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 content_pos = ImGui::GetCursorScreenPos();
+    float timeline_y = content_pos.y + 30.0f;
+    float visible_duration = songDuration / zoomLevel;
+    float visible_start = scrollOffset;
+
+    std::string resolutionLevel = "medium";
+    if (zoomLevel >= 10.0f) {
+        resolutionLevel = "high";
+    } else if (zoomLevel <= 2.0f) {
+        resolutionLevel = "low";
+    }
+
+    const std::vector<double>* waveform = &waveformData.data;
+    if (waveformData.levels.find(resolutionLevel) != waveformData.levels.end()) {
+        waveform = &waveformData.levels[resolutionLevel].peaks;
+    }
+
+    double timePerSample = waveformData.duration / waveform->size();
+    size_t startIndex = static_cast<size_t>(visible_start / timePerSample);
+    size_t endIndex = static_cast<size_t>((visible_start + visible_duration) / timePerSample);
+
+    startIndex = std::min(startIndex, waveform->size() - 1);
+    endIndex = std::min(endIndex, waveform->size());
+
+    if (startIndex >= endIndex) return;
+
+    float waveformHeight = timelineHeight * 0.4f;
+    float waveformY = timeline_y + (timelineHeight - waveformHeight) * 0.5f;
+
+    draw_list->AddRectFilled(
+        ImVec2(content_pos.x, waveformY),
+        ImVec2(content_pos.x + timelineWidth, waveformY + waveformHeight),
+        IM_COL32(20, 20, 20, 80)
+    );
+
+    float stepX = timelineWidth / (endIndex - startIndex);
+
+    for (size_t i = startIndex; i < endIndex - 1; ++i) {
+        float x1 = content_pos.x + (i - startIndex) * stepX;
+        float x2 = content_pos.x + (i + 1 - startIndex) * stepX;
+
+        float amplitude1 = static_cast<float>((*waveform)[i]) * waveformHeight * 0.45f * WAVEFORM_HEIGHT_MULTIPLIER;
+        float amplitude2 = static_cast<float>((*waveform)[i + 1]) * waveformHeight * 0.45f * WAVEFORM_HEIGHT_MULTIPLIER;
+
+        float y1 = waveformY + waveformHeight * 0.5f - amplitude1;
+        float y2 = waveformY + waveformHeight * 0.5f - amplitude2;
+
+        ImU32 waveformColor;
+        float intensity = (static_cast<float>((*waveform)[i]) + static_cast<float>((*waveform)[i + 1])) * 0.5f;
+        if (intensity > 0.8f) {
+            waveformColor = IM_COL32(255, 100, 100, 220); // Red for strong bass/rhythm
+        } else if (intensity > 0.6f) {
+            waveformColor = IM_COL32(255, 150, 100, 200); // Orange for medium intensity
+        } else if (intensity > 0.4f) {
+            waveformColor = IM_COL32(100, 200, 255, 180); // Blue for moderate intensity
+        } else {
+            waveformColor = IM_COL32(100, 150, 255, 150); // Light blue for low intensity
+        }
+
+        draw_list->AddLine(
+            ImVec2(x1, y1),
+            ImVec2(x2, y2),
+            waveformColor,
+            1.0f
+        );
+
+        draw_list->AddLine(
+            ImVec2(x1, waveformY + waveformHeight * 0.5f + amplitude1),
+            ImVec2(x2, waveformY + waveformHeight * 0.5f + amplitude2),
+            waveformColor,
+            1.0f
+        );
+    }
+
+    draw_list->AddLine(
+        ImVec2(content_pos.x, waveformY + waveformHeight * 0.5f),
+        ImVec2(content_pos.x + timelineWidth, waveformY + waveformHeight * 0.5f),
+        IM_COL32(255, 255, 255, 30),
+        1.0f
+    );
 }
 
 } // Windows

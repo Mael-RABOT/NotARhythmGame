@@ -55,17 +55,34 @@ WaveformLevel AudioAnalyzer::generateWaveformLevel(const std::vector<double>& ch
 
     int segmentCount = static_cast<int>(std::ceil(static_cast<double>(channelData.size()) / samplesPerPixel));
 
-    // Calculate global statistics
+    // Calculate global statistics for normalization
     double globalMax = 0.0;
     double globalSum = 0.0;
-    for (double sample : channelData) {
+    double globalBassSum = 0.0;
+    double globalRhythmSum = 0.0;
+
+    for (size_t i = 0; i < channelData.size(); i++) {
+        double sample = channelData[i];
         double absSample = std::abs(sample);
         globalMax = std::max(globalMax, absSample);
         globalSum += absSample;
+
+        if (i > 0) {
+            double bassComponent = sample * 0.8 + channelData[i-1] * 0.2;
+            globalBassSum += bassComponent * bassComponent;
+
+            double onset = std::abs(sample - channelData[i-1]);
+            globalRhythmSum += onset;
+        }
     }
 
     double globalAverage = globalSum / channelData.size();
-    double silenceThreshold = globalAverage * 0.15;
+    double globalBassAverage = std::sqrt(globalBassSum / (channelData.size() - 1));
+    double globalRhythmAverage = globalRhythmSum / (channelData.size() - 1);
+
+    double silenceThreshold = globalAverage * 0.1;
+    double bassThreshold = globalBassAverage * 0.3;
+    double rhythmThreshold = globalRhythmAverage * 0.5;
 
     for (int i = 0; i < segmentCount; i++) {
         int startSample = i * samplesPerPixel;
@@ -74,9 +91,12 @@ WaveformLevel AudioAnalyzer::generateWaveformLevel(const std::vector<double>& ch
         double maxPeak = -std::numeric_limits<double>::infinity();
         double minPeak = std::numeric_limits<double>::infinity();
         double sumSquares = 0.0;
-        double bassSum = 0.0;
+        double bassEnergy = 0.0;
+        double rhythmEnergy = 0.0;
+        double onsetEnergy = 0.0;
         int sampleCount = 0;
         int bassCount = 0;
+        int rhythmCount = 0;
 
         for (int j = startSample; j < endSample; j++) {
             double sample = channelData[j];
@@ -87,32 +107,69 @@ WaveformLevel AudioAnalyzer::generateWaveformLevel(const std::vector<double>& ch
 
             if (j > startSample) {
                 double highFreq = sample - channelData[j - 1];
-                double bassComponent = sample - highFreq * 0.3;
-                bassSum += bassComponent * bassComponent;
+                double midFreq = sample - highFreq * 0.5;
+                double bassComponent = midFreq - highFreq * 0.3;
+
+                bassEnergy += bassComponent * bassComponent * 2.0;
                 bassCount++;
+
+                double onset = std::abs(sample - channelData[j - 1]);
+                onsetEnergy += onset * onset;
+
+                bool prevPositive = channelData[j - 1] >= 0;
+                bool currPositive = sample >= 0;
+                if (prevPositive != currPositive) {
+                    rhythmEnergy += onset * 1.5;
+                }
+                rhythmCount++;
             }
         }
 
         double rmsValue = std::sqrt(sumSquares / sampleCount);
-        double bassEnergy = bassCount > 0 ? std::sqrt(bassSum / bassCount) : 0.0;
+        double avgBassEnergy = bassCount > 0 ? std::sqrt(bassEnergy / bassCount) : 0.0;
+        double avgRhythmEnergy = rhythmCount > 0 ? std::sqrt(rhythmEnergy / rhythmCount) : 0.0;
+        double avgOnsetEnergy = rhythmCount > 0 ? std::sqrt(onsetEnergy / rhythmCount) : 0.0;
+
         double peakAmplitude = std::max(std::abs(maxPeak), std::abs(minPeak));
-        double combinedAmplitude = std::max(peakAmplitude, bassEnergy * 1.5);
+
+        double volumeComponent = peakAmplitude * 0.3;
+        double bassComponent = avgBassEnergy * 2.5;
+        double rhythmComponent = avgRhythmEnergy * 2.0;
+        double onsetComponent = avgOnsetEnergy * 1.8;
+
+        double combinedAmplitude = volumeComponent + bassComponent + rhythmComponent + onsetComponent;
 
         double processedAmplitude;
         if (combinedAmplitude < silenceThreshold) {
-            processedAmplitude = combinedAmplitude * 0.3;
-        } else if (combinedAmplitude > globalAverage * 2) {
+            processedAmplitude = combinedAmplitude * 0.2;
+        } else if (bassComponent > bassThreshold * 2.0) {
+            processedAmplitude = combinedAmplitude * 1.8;
+        } else if (rhythmComponent > rhythmThreshold * 1.5) {
+            processedAmplitude = combinedAmplitude * 1.5;
+        } else if (combinedAmplitude > globalAverage * 3) {
             processedAmplitude = combinedAmplitude * 1.2;
         } else {
-            double normalized = (combinedAmplitude - silenceThreshold) / (globalAverage * 2 - silenceThreshold);
-            processedAmplitude = combinedAmplitude * (0.5 + normalized * 0.7);
+            double normalized = (combinedAmplitude - silenceThreshold) / (globalAverage * 3 - silenceThreshold);
+            processedAmplitude = combinedAmplitude * (0.6 + normalized * 0.8);
         }
 
-        double compressionFactor = 0.8;
+        double compressionFactor = 0.6;
         double finalAmplitude = std::pow(processedAmplitude, compressionFactor);
 
         peaks.push_back(finalAmplitude);
         rms.push_back(rmsValue);
+    }
+
+    if (!peaks.empty()) {
+        double maxPeak = *std::max_element(peaks.begin(), peaks.end());
+        double minPeak = *std::min_element(peaks.begin(), peaks.end());
+        double range = maxPeak - minPeak;
+
+        if (range > 0.0) {
+            for (double& peak : peaks) {
+                peak = (peak - minPeak) / range;
+            }
+        }
     }
 
     return {peaks, rms, samplesPerPixel};
@@ -240,7 +297,7 @@ AudioStats AudioAnalyzer::calculateAudioStats(const std::vector<double>& channel
 
         if (chunk % 5 == 0) {
             double progress = 85.0 + (static_cast<double>(chunk) / totalChunks) * 5.0;
-            updateProgress(progress, "Calculating audio statistics... (" + std::to_string(chunk) + "/" + std::to_string(totalChunks) + ")");
+            updateProgress(progress, "Calculating audio statistics... (" + std::to_string(chunk) + "/" + std::to_string(totalChunks) + " chunks)");
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
@@ -301,12 +358,15 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
                                    "MB). Maximum allowed: " + std::to_string(maxFileSize / (1024 * 1024)) + "MB");
         }
 
+        updateProgress(5, "File size OK (" + std::to_string(fileSize / (1024 * 1024)) + "MB)");
         updateProgress(10, "Loading audio file...");
 
         double sampleRate, duration;
         std::vector<double> channelData = loadAudioFile(filename, sampleRate, duration);
         int totalSamples = static_cast<int>(channelData.size());
 
+        updateProgress(30, "Audio loaded (" + std::to_string(totalSamples / 1000) + "k samples, " +
+                      std::to_string(static_cast<int>(duration)) + "s duration)");
         updateProgress(35, "Generating waveform levels...");
 
         // Create multiple resolution levels
@@ -321,7 +381,7 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
 
         for (size_t i = 0; i < resolutions.size(); i++) {
             double progress = 35.0 + (static_cast<double>(i) / resolutions.size()) * 20.0;
-            updateProgress(progress, "Generating " + resolutions[i].first + " waveform level...");
+            updateProgress(progress, "Generating " + resolutions[i].first + " waveform level (" + std::to_string(i + 1) + "/" + std::to_string(resolutions.size()) + ")...");
 
             waveformLevels[resolutions[i].first] = generateWaveformLevel(channelData, resolutions[i].second);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -350,7 +410,7 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
             sampleRate
         };
 
-        updateProgress(100, "Analysis complete!");
+        updateProgress(100, "Analysis complete! (" + std::to_string(waveformData.data.size()) + " waveform points)");
         return waveformData;
 
     } catch (const std::exception& e) {

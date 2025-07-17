@@ -20,12 +20,18 @@
 #include "SoundManager.hpp"
 #include "NodeManager.hpp"
 #include "Common.hpp"
+#include "AudioAnalazyer.hpp"
 
 #define BASS_DEFAULT_DEVICE -1
 #define BASS_MAX_FREQUENCY 44100
 #define BASS_MIN_FREQUENCY 0
 
 #define TIMELINE_OFFSET 4.0f
+
+#define MIN_ZOOM_LEVEL 1.0f
+#define MAX_ZOOM_LEVEL 50.0f
+
+#define WAVEFORM_HEIGHT_MULTIPLIER 2.5f
 
 namespace App {
 namespace Windows {
@@ -46,6 +52,15 @@ namespace Windows {
             bool isPlaying;
             double currentPosition; // in seconds
             double songDuration; // in seconds
+
+            // Waveform data
+            std::unique_ptr<AudioAnalyzer> audioAnalyzer;
+            AudioWaveform waveformData;
+            bool showWaveform;
+            bool waveformLoaded;
+            bool isAnalyzing;
+            std::string analysisProgress;
+            float analysisProgressPercent;
 
             // Timeline configuration
             float bpm;
@@ -94,6 +109,7 @@ namespace Windows {
             void drawTimelineGrid();
             void drawPlaybackCursor();
             void drawTimelineRuler();
+            void drawWaveform();
             void calculateGridSpacing();
             void updateAutoscroll();
             void refreshFileList();
@@ -104,6 +120,8 @@ namespace Windows {
             void jumpToPosition(Core::Note* note);
             void drawPropertiesPanel();
             void sortNotes();
+            void analyzeAudioFile(const std::string& filepath);
+            void onAnalysisProgress(const AnalysisProgress& progress);
 
             // Chart file operations
             bool saveChartFile(const std::string& filepath);
