@@ -18,7 +18,7 @@ namespace Windows {
 
     struct ChartHeader {
         char magic[12];        // "NOTARHYTHM" (11 chars + null terminator)
-        uint32_t version;      // File format version
+        uint32_t version;      // File format version (now 2 for TAP/HOLD support)
         uint32_t headerSize;   // Size of this header
         uint32_t audioSize;    // Size of embedded audio data
         uint32_t notesCount;   // Number of notes

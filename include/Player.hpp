@@ -51,11 +51,20 @@ namespace Windows {
     struct GameNote {
         int id;
         Core::Lane lane;
+        Core::NoteType type;
         double timestamp;
+        double endTimestamp;
         bool hit;
         Judgement judgement;
         double hitTime;
         bool isActive;
+        bool isHolding;
+        double holdStartTime;
+        bool holdCompleted;
+        double holdAccuracy;
+        int holdTicks;
+        int totalHoldTicks;
+        double lastHoldTickTime;
     };
 
     struct GameStats {
@@ -174,6 +183,12 @@ namespace Windows {
             ImVec4 comboColor;
             ImVec4 scoreColor;
 
+            double holdTickInterval;
+            double holdMissThreshold;
+            double holdBreakTime;
+            bool fKeyHolding;
+            bool jKeyHolding;
+
             bool loadSong(const std::string& filepath);
             void updatePlayback();
             void handleKeyboardInput();
@@ -218,6 +233,12 @@ namespace Windows {
             void createHitEffect(const ImVec2& position, Judgement judgement);
             void updateHitEffects();
             void playHitSound();
+
+            void updateHoldNotes();
+            void breakHoldNote(GameNote& note, const std::string& reason);
+            void completeHoldNote(GameNote& note);
+            void processHoldTick(GameNote& note);
+            bool isKeyHeldForLane(Core::Lane lane);
 
         public:
             Player();

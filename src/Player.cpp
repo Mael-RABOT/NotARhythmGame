@@ -75,7 +75,12 @@ Player::Player()
       noteBottomColor(ImVec4(1.0f, 0.4f, 0.6f, 1.0f)),
       hitZoneColor(ImVec4(1.0f, 1.0f, 0.0f, 1.0f)),
       comboColor(ImVec4(1.0f, 0.8f, 0.0f, 1.0f)),
-      scoreColor(ImVec4(0.0f, 1.0f, 0.8f, 1.0f))
+      scoreColor(ImVec4(0.0f, 1.0f, 0.8f, 1.0f)),
+      holdTickInterval(0.1),
+      holdMissThreshold(0.2),
+      holdBreakTime(0.0),
+      fKeyHolding(false),
+      jKeyHolding(false)
 {
     calculateGridSpacing();
     refreshFileList();
@@ -154,7 +159,12 @@ Player::Player(Core::SoundManager* soundManager)
       noteBottomColor(ImVec4(1.0f, 0.4f, 0.6f, 1.0f)),
       hitZoneColor(ImVec4(1.0f, 1.0f, 0.0f, 1.0f)),
       comboColor(ImVec4(1.0f, 0.8f, 0.0f, 1.0f)),
-      scoreColor(ImVec4(0.0f, 1.0f, 0.8f, 1.0f))
+      scoreColor(ImVec4(0.0f, 1.0f, 0.8f, 1.0f)),
+      holdTickInterval(0.1),
+      holdMissThreshold(0.2),
+      holdBreakTime(0.0),
+      fKeyHolding(false),
+      jKeyHolding(false)
 {
     calculateGridSpacing();
     refreshFileList();
@@ -203,6 +213,7 @@ void Player::update() {
     updateHitEffects();
     if (gameState == PLAYING) {
         updateGameLogic();
+        updateHoldNotes();
     }
 }
 
@@ -243,20 +254,33 @@ void Player::updatePlayback() {
 }
 
 void Player::handleKeyboardInput() {
-    if (ImGui::IsKeyPressed(ImGuiKey_F) && !fKeyPressed) {
+    bool fKeyJustPressed = ImGui::IsKeyPressed(ImGuiKey_F);
+    bool jKeyJustPressed = ImGui::IsKeyPressed(ImGuiKey_J);
+    bool fKeyJustReleased = ImGui::IsKeyReleased(ImGuiKey_F);
+    bool jKeyJustReleased = ImGui::IsKeyReleased(ImGuiKey_J);
+
+    if (fKeyJustPressed) {
+        fKeyHolding = true;
         fKeyPressed = true;
         lastFKeyTime = currentPosition;
-        processInput();
-    } else if (!ImGui::IsKeyPressed(ImGuiKey_F)) {
+    }
+    if (fKeyJustReleased) {
+        fKeyHolding = false;
         fKeyPressed = false;
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_J) && !jKeyPressed) {
+    if (jKeyJustPressed) {
+        jKeyHolding = true;
         jKeyPressed = true;
         lastJKeyTime = currentPosition;
-        processInput();
-    } else if (!ImGui::IsKeyPressed(ImGuiKey_J)) {
+    }
+    if (jKeyJustReleased) {
+        jKeyHolding = false;
         jKeyPressed = false;
+    }
+
+    if (fKeyJustPressed || jKeyJustPressed) {
+        processInput();
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_Space) && gameState == PLAYING) {
@@ -274,6 +298,14 @@ void Player::calculateGridSpacing() {
     float beats_per_second = bpm / 60.0f;
     float beat_duration = 1.0f / beats_per_second;
     gridSpacing = beat_duration / 4.0f;
+}
+
+bool Player::isKeyHeldForLane(Core::Lane lane) {
+    if (lane == Core::Lane::TOP) {
+        return fKeyHolding;
+    } else {
+        return jKeyHolding;
+    }
 }
 
 void Player::updateAutoscroll() {
@@ -382,61 +414,208 @@ void Player::updateGameLogic() {
 
 void Player::processInput() {
     double currentTime = currentPosition;
+    std::vector<int> processedNotes;
 
     for (auto& note : gameNotes) {
-        if (note.isActive && !note.hit) {
-            double time_diff = std::abs(currentTime - note.timestamp);
+        if (note.isActive && !note.hit &&
+            std::find(processedNotes.begin(), processedNotes.end(), note.id) == processedNotes.end()) {
 
-            if (time_diff <= judgementWindow) {
-                bool correct_key = false;
-                if (note.lane == Core::Lane::TOP && fKeyPressed) {
-                    correct_key = true;
-                } else if (note.lane == Core::Lane::BOTTOM && jKeyPressed) {
-                    correct_key = true;
+            if (note.type == Core::NoteType::TAP) {
+                double time_diff = std::abs(currentTime - note.timestamp);
+
+                if (time_diff <= judgementWindow) {
+                    bool correct_key = false;
+                    if (note.lane == Core::Lane::TOP && fKeyPressed) {
+                        correct_key = true;
+                    } else if (note.lane == Core::Lane::BOTTOM && jKeyPressed) {
+                        correct_key = true;
+                    }
+
+                    if (correct_key) {
+                        note.hit = true;
+                        note.hitTime = currentTime;
+                        Judgement judgement = calculateJudgement(currentTime, note.timestamp);
+                        note.judgement = judgement;
+                        updateStats(judgement);
+
+                        ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+                        if (note.lane == Core::Lane::BOTTOM) {
+                            hitPosition.y += laneHeight * 0.25f;
+                        } else {
+                            hitPosition.y -= laneHeight * 0.25f;
+                        }
+                        createHitEffect(hitPosition, judgement);
+
+                        playHitSound();
+
+                        showJudgement = true;
+                        judgementDisplayTime = 0.5;
+                        switch (judgement) {
+                            case PERFECT:
+                                lastJudgementText = "PERFECT";
+                                lastJudgementColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+                                break;
+                            case GREAT:
+                                lastJudgementText = "GREAT";
+                                lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+                                break;
+                            case GOOD:
+                                lastJudgementText = "GOOD";
+                                lastJudgementColor = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
+                                break;
+                            case MISS:
+                                lastJudgementText = "MISS";
+                                lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+                                break;
+                        }
+
+                        processedNotes.push_back(note.id);
+                    }
                 }
+            } else if (note.type == Core::NoteType::HOLD) {
+                if (!note.isHolding) {
+                    double time_diff = std::abs(currentTime - note.timestamp);
 
-                if (correct_key) {
-                    note.hit = true;
-                    note.hitTime = currentTime;
-                    Judgement judgement = calculateJudgement(currentTime, note.timestamp);
-                    note.judgement = judgement;
-                    updateStats(judgement);
+                    if (time_diff <= judgementWindow) {
+                        bool correct_key = false;
+                        if (note.lane == Core::Lane::TOP && fKeyPressed) {
+                            correct_key = true;
+                        } else if (note.lane == Core::Lane::BOTTOM && jKeyPressed) {
+                            correct_key = true;
+                        }
 
-                    ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
-                    if (note.lane == Core::Lane::BOTTOM) {
-                        hitPosition.y += laneHeight * 0.25f;
-                    } else {
-                        hitPosition.y -= laneHeight * 0.25f;
+                        if (correct_key) {
+                            note.isHolding = true;
+                            note.holdStartTime = currentTime;
+                            note.hitTime = currentTime;
+                            note.lastHoldTickTime = currentTime;
+                            note.holdTicks = 0;
+                            note.totalHoldTicks = static_cast<int>((note.endTimestamp - note.timestamp) / holdTickInterval) + 1;
+
+                            Judgement judgement = calculateJudgement(currentTime, note.timestamp);
+                            note.judgement = judgement;
+                            updateStats(judgement);
+
+                            ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+                            if (note.lane == Core::Lane::BOTTOM) {
+                                hitPosition.y += laneHeight * 0.25f;
+                            } else {
+                                hitPosition.y -= laneHeight * 0.25f;
+                            }
+                            createHitEffect(hitPosition, judgement);
+
+                            playHitSound();
+
+                            showJudgement = true;
+                            judgementDisplayTime = 0.5;
+                            switch (judgement) {
+                                case PERFECT:
+                                    lastJudgementText = "HOLD START";
+                                    lastJudgementColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+                                    break;
+                                case GREAT:
+                                    lastJudgementText = "HOLD START";
+                                    lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+                                    break;
+                                case GOOD:
+                                    lastJudgementText = "HOLD START";
+                                    lastJudgementColor = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
+                                    break;
+                                case MISS:
+                                    lastJudgementText = "MISS";
+                                    lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+                                    break;
+                            }
+
+                            processedNotes.push_back(note.id);
+                        }
                     }
-                    createHitEffect(hitPosition, judgement);
-
-                    playHitSound();
-
-                    showJudgement = true;
-                    judgementDisplayTime = 0.5;
-                    switch (judgement) {
-                        case PERFECT:
-                            lastJudgementText = "PERFECT";
-                            lastJudgementColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
-                            break;
-                        case GREAT:
-                            lastJudgementText = "GREAT";
-                            lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-                            break;
-                        case GOOD:
-                            lastJudgementText = "GOOD";
-                            lastJudgementColor = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
-                            break;
-                        case MISS:
-                            lastJudgementText = "MISS";
-                            lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-                            break;
-                    }
-                    break;
                 }
             }
         }
     }
+}
+
+void Player::updateHoldNotes() {
+    double currentTime = currentPosition;
+
+    for (auto& note : gameNotes) {
+        if (note.isActive && note.isHolding && !note.hit) {
+            if (!isKeyHeldForLane(note.lane)) {
+                breakHoldNote(note, "Key released");
+                continue;
+            }
+
+            if (currentTime >= note.endTimestamp) {
+                completeHoldNote(note);
+                continue;
+            }
+
+            if (currentTime - note.lastHoldTickTime >= holdTickInterval) {
+                processHoldTick(note);
+            }
+        }
+    }
+}
+
+void Player::processHoldTick(GameNote& note) {
+    double currentTime = currentPosition;
+    note.lastHoldTickTime = currentTime;
+    note.holdTicks++;
+
+    stats.score += 5;
+
+    if (note.totalHoldTicks > 0) {
+        note.holdAccuracy = static_cast<double>(note.holdTicks) / note.totalHoldTicks;
+    }
+}
+
+void Player::breakHoldNote(GameNote& note, const std::string& reason) {
+    note.isHolding = false;
+    note.hit = true;
+    note.holdCompleted = false;
+    note.judgement = MISS;
+    updateStats(MISS);
+    stats.combo = 0;
+
+    ImVec2 missPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+    if (note.lane == Core::Lane::BOTTOM) {
+        missPosition.y += laneHeight * 0.25f;
+    } else {
+        missPosition.y -= laneHeight * 0.25f;
+    }
+    createHitEffect(missPosition, MISS);
+
+    showJudgement = true;
+    judgementDisplayTime = 0.5;
+    lastJudgementText = "HOLD BREAK";
+    lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+}
+
+void Player::completeHoldNote(GameNote& note) {
+    note.isHolding = false;
+    note.hit = true;
+    note.holdCompleted = true;
+
+    if (note.totalHoldTicks > 0) {
+        note.holdAccuracy = static_cast<double>(note.holdTicks) / note.totalHoldTicks;
+    }
+
+    int holdBonus = static_cast<int>(note.holdAccuracy * 50);
+    stats.score += holdBonus;
+
+    ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+    if (note.lane == Core::Lane::BOTTOM) {
+        hitPosition.y += laneHeight * 0.25f;
+    } else {
+        hitPosition.y -= laneHeight * 0.25f;
+    }
+    createHitEffect(hitPosition, note.judgement);
+
+    showJudgement = true;
+    judgementDisplayTime = 0.5;
+    lastJudgementText = "HOLD COMPLETE";
+    lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
 }
 
 void Player::checkNoteHits() {
@@ -444,19 +623,37 @@ void Player::checkNoteHits() {
 
     for (auto& note : gameNotes) {
         if (note.isActive && !note.hit) {
-            if (currentTime - note.timestamp > judgementWindow) {
-                note.hit = true;
-                note.judgement = MISS;
-                updateStats(MISS);
-                stats.combo = 0;
+            if (note.type == Core::NoteType::TAP) {
+                if (currentTime - note.timestamp > judgementWindow) {
+                    note.hit = true;
+                    note.judgement = MISS;
+                    updateStats(MISS);
+                    stats.combo = 0;
 
-                ImVec2 missPosition = ImVec2(50.0f, displaySize.y * 0.5f);
-                if (note.lane == Core::Lane::BOTTOM) {
-                    missPosition.y += laneHeight * 0.25f;
-                } else {
-                    missPosition.y -= laneHeight * 0.25f;
+                    ImVec2 missPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+                    if (note.lane == Core::Lane::BOTTOM) {
+                        missPosition.y += laneHeight * 0.25f;
+                    } else {
+                        missPosition.y -= laneHeight * 0.25f;
+                    }
+                    createHitEffect(missPosition, MISS);
                 }
-                createHitEffect(missPosition, MISS);
+            } else if (note.type == Core::NoteType::HOLD) {
+                if (!note.isHolding && currentTime - note.timestamp > judgementWindow) {
+                    note.hit = true;
+                    note.judgement = MISS;
+                    note.holdCompleted = false;
+                    updateStats(MISS);
+                    stats.combo = 0;
+
+                    ImVec2 missPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+                    if (note.lane == Core::Lane::BOTTOM) {
+                        missPosition.y += laneHeight * 0.25f;
+                    } else {
+                        missPosition.y -= laneHeight * 0.25f;
+                    }
+                    createHitEffect(missPosition, MISS);
+                }
             }
         }
     }
@@ -752,6 +949,12 @@ void Player::resetGame() {
     for (auto& note : gameNotes) {
         note.hit = false;
         note.isActive = true;
+        note.isHolding = false;
+        note.holdCompleted = false;
+        note.holdAccuracy = 0.0;
+        note.holdTicks = 0;
+        note.totalHoldTicks = 0;
+        note.lastHoldTickTime = 0.0;
     }
 }
 
@@ -798,7 +1001,7 @@ bool Player::loadChartFile(const std::string& filepath) {
         return false;
     }
 
-    if (header.version != 1) {
+    if (header.version < 1 || header.version > 2) {
         std::cerr << "Unsupported chart file version: " << header.version << std::endl;
         return false;
     }
@@ -841,11 +1044,29 @@ bool Player::loadChartFile(const std::string& filepath) {
         GameNote note;
         file.read(reinterpret_cast<char*>(&note.id), sizeof(int));
         file.read(reinterpret_cast<char*>(&note.lane), sizeof(Core::Lane));
-        file.read(reinterpret_cast<char*>(&note.timestamp), sizeof(double));
+
+        if (header.version >= 2) {
+            file.read(reinterpret_cast<char*>(&note.type), sizeof(Core::NoteType));
+            file.read(reinterpret_cast<char*>(&note.timestamp), sizeof(double));
+            file.read(reinterpret_cast<char*>(&note.endTimestamp), sizeof(double));
+        } else {
+            // Version 1 compatibility - all notes are TAP notes
+            note.type = Core::NoteType::TAP;
+            file.read(reinterpret_cast<char*>(&note.timestamp), sizeof(double));
+            note.endTimestamp = note.timestamp;
+        }
+
         note.hit = false;
         note.judgement = MISS;
         note.hitTime = 0.0;
         note.isActive = true;
+        note.isHolding = false;
+        note.holdStartTime = 0.0;
+        note.holdCompleted = false;
+        note.holdAccuracy = 0.0;
+        note.holdTicks = 0;
+        note.totalHoldTicks = 0;
+        note.lastHoldTickTime = 0.0;
         gameNotes.push_back(note);
     }
 
@@ -947,6 +1168,13 @@ void Player::drawControlsWindow() {
     ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Space - Pause/Resume");
 
     ImGui::Spacing();
+    ImGui::TextColored(ImVec4(0.8f, 0.6f, 1.0f, 1.0f), "HOLD NOTES:");
+    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "• Press and hold key when note arrives");
+    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "• Keep holding until note ends");
+    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "• Release early = HOLD BREAK");
+    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "• Complete hold = bonus points");
+
+    ImGui::Spacing();
 
     if (gameState == PLAYING) {
         if (ImGui::Button("PAUSE", ImVec2(80, 30))) {
@@ -1046,13 +1274,61 @@ void Player::drawApproachingNotes() {
 
     for (const auto& note : gameNotes) {
         if (note.isActive && !note.hit) {
-            double time_until_hit = note.timestamp - currentPosition;
+            if (note.type == Core::NoteType::TAP) {
+                double time_until_hit = note.timestamp - currentPosition;
 
-            if (time_until_hit >= -judgementWindow && time_until_hit <= approachTime) {
-                float progress = 1.0f - (time_until_hit / approachTime);
-                float note_x = window_pos.x + window_size.x - 50.0f - progress * lane_width;
+                if (time_until_hit >= -judgementWindow && time_until_hit <= approachTime) {
+                    float progress = 1.0f - (time_until_hit / approachTime);
+                    float note_x = window_pos.x + window_size.x - 50.0f - progress * lane_width;
 
-                if (note_x >= window_pos.x && note_x <= window_pos.x + window_size.x) {
+                    if (note_x >= window_pos.x && note_x <= window_pos.x + window_size.x) {
+                        float note_y = lane_y;
+                        if (note.lane == Core::Lane::BOTTOM) {
+                            note_y += laneHeight * 0.25f;
+                        } else {
+                            note_y -= laneHeight * 0.25f;
+                        }
+
+                        ImVec4 note_color = (note.lane == Core::Lane::TOP) ? noteTopColor : noteBottomColor;
+                        ImVec2 note_center(note_x, note_y);
+
+                        draw_list->AddCircleFilled(note_center, noteRadius * 1.5f,
+                                                 IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                        note_color.z * 255, 50));
+
+                        draw_list->AddCircleFilled(note_center, noteRadius,
+                                                 IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                        note_color.z * 255, 255));
+
+                        draw_list->AddCircle(note_center, noteRadius,
+                                           IM_COL32(255, 255, 255, 200), 24, 2.0f);
+                    }
+                }
+            } else if (note.type == Core::NoteType::HOLD) {
+                double time_until_hit = note.timestamp - currentPosition;
+                double time_until_end = note.endTimestamp - currentPosition;
+
+                bool start_visible = (time_until_hit >= -judgementWindow && time_until_hit <= approachTime);
+                bool end_visible = (time_until_end >= -judgementWindow && time_until_end <= approachTime);
+                bool body_visible = (time_until_hit <= approachTime + 0.5 && time_until_end >= -judgementWindow - 0.5);
+
+                if (start_visible || end_visible || body_visible) {
+                    float progress_start = 1.0f - (time_until_hit / approachTime);
+                    float progress_end = 1.0f - (time_until_end / approachTime);
+
+                    float start_x = window_pos.x + window_size.x - 50.0f - progress_start * lane_width;
+                    float end_x = window_pos.x + window_size.x - 50.0f - progress_end * lane_width;
+
+                    float display_start_x = start_x;
+                    float display_end_x = end_x;
+
+                    if (display_start_x < window_pos.x) {
+                        display_start_x = window_pos.x;
+                    }
+                    if (display_end_x > window_pos.x + window_size.x) {
+                        display_end_x = window_pos.x + window_size.x;
+                    }
+
                     float note_y = lane_y;
                     if (note.lane == Core::Lane::BOTTOM) {
                         note_y += laneHeight * 0.25f;
@@ -1061,14 +1337,79 @@ void Player::drawApproachingNotes() {
                     }
 
                     ImVec4 note_color = (note.lane == Core::Lane::TOP) ? noteTopColor : noteBottomColor;
-                    ImVec2 note_center(note_x, note_y);
 
-                    draw_list->AddCircleFilled(note_center, noteRadius * 1.5f,
-                                             IM_COL32(note_color.x * 255, note_color.y * 255,
-                                                    note_color.z * 255, 50));
-                    draw_list->AddCircleFilled(note_center, noteRadius,
-                                             IM_COL32(note_color.x * 255, note_color.y * 255,
-                                                    note_color.z * 255, 255));
+                    if (note.isHolding) {
+                        note_color = ImVec4(
+                            std::min(1.0f, note_color.x * 1.3f),
+                            std::min(1.0f, note_color.y * 1.3f),
+                            std::min(1.0f, note_color.z * 1.3f),
+                            note_color.w
+                        );
+                    }
+
+                    if (end_x > start_x) {
+                        float hold_height = noteRadius * 1.5f;
+
+                        draw_list->AddRectFilled(
+                            ImVec2(display_start_x, note_y - hold_height * 0.5f),
+                            ImVec2(display_end_x, note_y + hold_height * 0.5f),
+                            IM_COL32(note_color.x * 255, note_color.y * 255, note_color.z * 255, 120)
+                        );
+
+                        draw_list->AddRect(
+                            ImVec2(display_start_x, note_y - hold_height * 0.5f),
+                            ImVec2(display_end_x, note_y + hold_height * 0.5f),
+                            IM_COL32(note_color.x * 255, note_color.y * 255, note_color.z * 255, 200),
+                            0.0f, 0, 2.0f
+                        );
+
+                        if (note.isHolding && note.totalHoldTicks > 0) {
+                            float progress_ratio = static_cast<float>(note.holdTicks) / note.totalHoldTicks;
+                            float progress_width = (display_end_x - display_start_x) * progress_ratio;
+
+                            if (progress_width > 0) {
+                                draw_list->AddRectFilled(
+                                    ImVec2(display_start_x, note_y - hold_height * 0.5f),
+                                    ImVec2(display_start_x + progress_width, note_y + hold_height * 0.5f),
+                                    IM_COL32(255, 255, 255, 100)
+                                );
+                            }
+                        }
+                    }
+
+                    if (start_visible || time_until_hit <= approachTime + 2.0) {
+                        ImVec2 start_center(start_x, note_y);
+
+                        if (start_x >= window_pos.x - noteRadius * 3.0f &&
+                            start_x <= window_pos.x + window_size.x + noteRadius * 3.0f) {
+
+                            draw_list->AddCircleFilled(start_center, noteRadius * 1.5f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, 50));
+                            draw_list->AddCircleFilled(start_center, noteRadius,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, 255));
+                            draw_list->AddCircle(start_center, noteRadius,
+                                               IM_COL32(255, 255, 255, 200), 24, 2.0f);
+                        }
+                    }
+
+                    if (end_visible || time_until_end <= approachTime + 2.0) {
+                        ImVec2 end_center(end_x, note_y);
+
+                        if (end_x >= window_pos.x - noteRadius * 3.0f &&
+                            end_x <= window_pos.x + window_size.x + noteRadius * 3.0f) {
+
+                            draw_list->AddCircleFilled(end_center, noteRadius * 1.2f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, 50));
+                            draw_list->AddCircleFilled(end_center, noteRadius * 0.8f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, 255));
+                            draw_list->AddCircle(end_center, noteRadius * 0.8f,
+                                               IM_COL32(255, 255, 255, 200), 24, 2.0f);
+                        }
+                    }
                 }
             }
         }

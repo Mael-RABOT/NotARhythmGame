@@ -11,10 +11,17 @@ namespace Core {
         BOTTOM = 1,
     };
 
+    enum NoteType {
+        TAP = 0,
+        HOLD = 1,
+    };
+
     struct Note {
         int id;
         Lane lane;
-        double timestamp;
+        NoteType type;
+        double timestamp;        // Start time for both TAP and HOLD
+        double endTimestamp;     // End time for HOLD notes (same as timestamp for TAP)
     };
 
     class NodeManager {
@@ -22,8 +29,11 @@ namespace Core {
         NodeManager();
         int addNote(int lane, double timestamp);
         int addNoteWithId(int id, int lane, double timestamp);
+        int addHoldNote(int lane, double startTimestamp, double endTimestamp);
+        int addHoldNoteWithId(int id, int lane, double startTimestamp, double endTimestamp);
         void removeNote(int id);
         void moveNote(int id, int newLane, double newTimestamp);
+        void moveHoldNote(int id, int newLane, double newStartTimestamp, double newEndTimestamp);
         Note* getNoteById(int id);
         std::vector<Note>& getNotes();
         void clear();

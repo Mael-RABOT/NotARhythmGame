@@ -6,12 +6,25 @@ namespace Core {
     NodeManager::NodeManager() : nextId(1) {}
 
     int NodeManager::addNote(int lane, double timestamp) {
-        notes.push_back(Note{nextId, static_cast<Lane>(lane), timestamp});
+        notes.push_back(Note{nextId, static_cast<Lane>(lane), TAP, timestamp, timestamp});
         return nextId++;
     }
 
     int NodeManager::addNoteWithId(int id, int lane, double timestamp) {
-        notes.push_back(Note{id, static_cast<Lane>(lane), timestamp});
+        notes.push_back(Note{id, static_cast<Lane>(lane), TAP, timestamp, timestamp});
+        if (id >= nextId) {
+            nextId = id + 1;
+        }
+        return id;
+    }
+
+    int NodeManager::addHoldNote(int lane, double startTimestamp, double endTimestamp) {
+        notes.push_back(Note{nextId, static_cast<Lane>(lane), HOLD, startTimestamp, endTimestamp});
+        return nextId++;
+    }
+
+    int NodeManager::addHoldNoteWithId(int id, int lane, double startTimestamp, double endTimestamp) {
+        notes.push_back(Note{id, static_cast<Lane>(lane), HOLD, startTimestamp, endTimestamp});
         if (id >= nextId) {
             nextId = id + 1;
         }
@@ -27,6 +40,20 @@ namespace Core {
             if (n.id == id) {
                 n.lane = static_cast<Lane>(newLane);
                 n.timestamp = newTimestamp;
+                if (n.type == TAP) {
+                    n.endTimestamp = newTimestamp;
+                }
+                break;
+            }
+        }
+    }
+
+    void NodeManager::moveHoldNote(int id, int newLane, double newStartTimestamp, double newEndTimestamp) {
+        for (auto& n : notes) {
+            if (n.id == id) {
+                n.lane = static_cast<Lane>(newLane);
+                n.timestamp = newStartTimestamp;
+                n.endTimestamp = newEndTimestamp;
                 break;
             }
         }
