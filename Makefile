@@ -13,7 +13,7 @@ build:  ## Build the project
 ##@ Clean
 .PHONY: clean
 clean:  ## Clean the project
-	rm -f NotARhytmGame
+	rm -f NotARhythmGame
 
 ##@ Full Clean
 .PHONY: fclean

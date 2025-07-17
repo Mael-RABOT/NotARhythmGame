@@ -112,7 +112,7 @@ void Editor::drawTimelineLanes() {
             noteColor = IM_COL32(255, 200, 100, 200);
             borderColor = IM_COL32(255, 180, 80, 255);
         } else {
-            if (note.lane == 0) {
+            if (note.lane == 0) { // TODO: Use enum
                 noteColor = IM_COL32(100, 150, 255, 200);
                 borderColor = IM_COL32(80, 120, 200, 255);
             } else {
@@ -182,7 +182,7 @@ void Editor::drawTimelineLanes() {
                 "Drag to move",
                 note.id,
                 selectionStatus,
-                note.lane == 0 ? "Top" : "Bottom",
+                note.lane == 0 ? "Top" : "Bottom", // TODO: use enum
                 note.timestamp,
                 note.timestamp > 0 ? 60.0 / note.timestamp : 0.0
             );
@@ -1157,7 +1157,7 @@ void Editor::drawNotesList() {
 
     ImGui::Text("Sort by:");
     ImGui::SameLine();
-    if (ImGui::RadioButton("Time", sortOrder == 0)) {
+    if (ImGui::RadioButton("Time", sortOrder == 0)) { // TODO: use enum
         sortOrder = 0;
         sortNotes();
     }
@@ -1228,7 +1228,7 @@ void Editor::drawNotesList() {
             ImGui::Text("%d", note.id);
 
             ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%s", note.lane == 0 ? "Top" : "Bottom");
+            ImGui::Text("%s", note.lane == 0 ? "Top" : "Bottom"); // TODO: use enum
 
             ImGui::TableSetColumnIndex(3);
             int minutes = (int)note.timestamp / 60;
@@ -1267,7 +1267,7 @@ void Editor::drawPropertiesPanel() {
             ImGui::Separator();
 
             ImGui::Text("Lane:");
-            if (ImGui::RadioButton("Top", selectedNote->lane == 0)) {
+            if (ImGui::RadioButton("Top", selectedNote->lane == 0)) { // TODO:  Use enum
                 nodeManager.moveNote(selectedNote->id, 0, selectedNote->timestamp);
             }
             ImGui::SameLine();
