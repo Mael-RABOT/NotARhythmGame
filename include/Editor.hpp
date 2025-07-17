@@ -11,6 +11,9 @@
 #include <cstdlib>
 #include <array>
 #include <tuple>
+#include <fstream>
+#include <cstring>
+#include <filesystem>
 
 #include "imgui.h"
 
@@ -39,6 +42,19 @@ namespace Windows {
         TIME = 0,
         LANE = 1,
         ID = 2,
+    };
+
+    struct ChartHeader {
+        char magic[12];        // "NOTARHYTHM" (11 chars + null terminator)
+        uint32_t version;      // File format version
+        uint32_t headerSize;   // Size of this header
+        uint32_t audioSize;    // Size of embedded audio data
+        uint32_t notesCount;   // Number of notes
+        char title[256];       // Song title
+        char artist[256];      // Artist name
+        float bpm;             // Beats per minute
+        double duration;       // Song duration in seconds
+        uint32_t reserved[16]; // Reserved for future use
     };
 
     class Editor {
@@ -87,6 +103,12 @@ namespace Windows {
             float noteRadius;
             SortOrder sortOrder;
 
+            // Chart file management
+            bool showSaveDialog;
+            bool showLoadDialog;
+            std::string chartTitle;
+            std::string chartArtist;
+
             void loadSong(const std::string& filepath);
             void updatePlayback();
             void handleKeyboardInput();
@@ -103,6 +125,13 @@ namespace Windows {
             void jumpToPosition(Core::Note* note);
             void drawPropertiesPanel();
             void sortNotes();
+
+            // Chart file operations
+            bool saveChartFile(const std::string& filepath);
+            bool loadChartFile(const std::string& filepath);
+            std::vector<char> readAudioFile(const std::string& filepath);
+            bool writeAudioFile(const std::string& filepath, const std::vector<char>& audioData);
+            void extractAudioFromChart(const std::string& chartPath, const std::string& outputPath);
 
         public:
             Editor();

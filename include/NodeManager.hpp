@@ -21,6 +21,7 @@ namespace Core {
     public:
         NodeManager();
         int addNote(int lane, double timestamp);
+        int addNoteWithId(int id, int lane, double timestamp);
         void removeNote(int id);
         void moveNote(int id, int newLane, double newTimestamp);
         Note* getNoteById(int id);

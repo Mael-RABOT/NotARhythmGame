@@ -10,6 +10,14 @@ namespace Core {
         return nextId++;
     }
 
+    int NodeManager::addNoteWithId(int id, int lane, double timestamp) {
+        notes.push_back(Note{id, static_cast<Lane>(lane), timestamp});
+        if (id >= nextId) {
+            nextId = id + 1;
+        }
+        return id;
+    }
+
     void NodeManager::removeNote(int id) {
         notes.erase(std::remove_if(notes.begin(), notes.end(), [id](const Note& n){ return n.id == id; }), notes.end());
     }

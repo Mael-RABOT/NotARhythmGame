@@ -388,7 +388,11 @@ Editor::Editor()
       showNoteIds(false),
       showMilliseconds(false),
       noteRadius(12.0f),
-      sortOrder(SortOrder::TIME) {
+      sortOrder(SortOrder::TIME),
+      showSaveDialog(false),
+      showLoadDialog(false),
+      chartTitle(""),
+      chartArtist("") {
 
     if (!soundManager->initialize(BASS_DEFAULT_DEVICE, BASS_MAX_FREQUENCY, BASS_MIN_FREQUENCY)) {
         std::cerr << "Failed to initialize sound manager" << std::endl;
@@ -398,7 +402,14 @@ Editor::Editor()
     refreshFileList();
 
     const char* home = getenv("HOME");
-    currentDirectory = home ? strcat(strdup(home), "/Music") : ".";
+    if (home) {
+        currentDirectory = std::string(home) + "/Music";
+        if (!std::filesystem::exists(currentDirectory)) {
+            currentDirectory = home;
+        }
+    } else {
+        currentDirectory = ".";
+    }
     refreshFileList();
 }
 
@@ -765,15 +776,22 @@ void Editor::render() {
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Save Level", ImVec2(100, 25))) {
-        // TODO: Implement level saving
-        ImGui::OpenPopup("Save Level");
+    if (ImGui::Button("Save Chart", ImVec2(100, 25))) {
+        if (isSongLoaded) {
+            showSaveDialog = true;
+        } else {
+            ImGui::OpenPopup("No Song Loaded");
+        }
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Load Level", ImVec2(100, 25))) {
-        // TODO: Implement level loading
-        ImGui::OpenPopup("Load Level");
+    if (ImGui::Button("Load Chart", ImVec2(100, 25))) {
+        showLoadDialog = true;
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Browse Charts", ImVec2(100, 25))) {
+        showFileDialog = true;
     }
 
     ImGui::SameLine();
@@ -1011,12 +1029,20 @@ void Editor::render() {
         }
 
         if (!files.empty()) {
-            ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.8f, 1.0f), "Audio Files:");
+            ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.8f, 1.0f), "Files:");
 
             ImGui::BeginChild("FilesList", ImVec2(0, 0), ImGuiChildFlags_Borders);
 
             for (size_t i = 0; i < files.size(); i++) {
-                std::string fileName = "[AUDIO] " + files[i];
+                std::string extension = std::filesystem::path(files[i]).extension().string();
+                std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+                std::string prefix = "[AUDIO] ";
+                if (extension == ".chart") {
+                    prefix = "[CHART] ";
+                }
+
+                std::string fileName = prefix + files[i];
                 bool isSelected = (selectedFileIndex == static_cast<int>(i));
 
                 if (ImGui::Selectable(fileName.c_str(), isSelected)) {
@@ -1025,14 +1051,18 @@ void Editor::render() {
 
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                     std::string fullPath = currentDirectory + "/" + files[i];
-                    loadSong(fullPath);
+                    if (extension == ".chart") {
+                        loadChartFile(fullPath);
+                    } else {
+                        loadSong(fullPath);
+                    }
                     ImGui::CloseCurrentPopup();
                 }
             }
 
             ImGui::EndChild();
         } else {
-            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No audio files found in this directory");
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No audio or chart files found in this directory");
         }
 
         ImGui::EndChild();
@@ -1043,42 +1073,68 @@ void Editor::render() {
 
             if (ImGui::Button("Load Selected File", ImVec2(150, 25))) {
                 std::string fullPath = currentDirectory + "/" + files[selectedFileIndex];
-                loadSong(fullPath);
+                std::string extension = std::filesystem::path(files[selectedFileIndex]).extension().string();
+                std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+                if (extension == ".chart") {
+                    loadChartFile(fullPath);
+                } else {
+                    loadSong(fullPath);
+                }
                 ImGui::CloseCurrentPopup();
             }
         }
 
         ImGui::Separator();
-        ImGui::Text("Directories: %zu | Audio Files: %zu | Double-click to load", directories.size(), files.size());
+        ImGui::Text("Directories: %zu | Files: %zu | Double-click to load", directories.size(), files.size());
 
         ImGui::EndPopup();
     }
 
-    if (ImGui::BeginPopupModal("Save Level", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Save Level");
+    if (showSaveDialog) {
+        ImGui::OpenPopup("Save Chart");
+        showSaveDialog = false;
+    }
+
+    if (ImGui::BeginPopupModal("Save Chart", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Save Chart File");
         ImGui::Separator();
 
-        static char levelName[256] = "";
-        static char levelPath[512] = "";
+        static char chartName[256] = "";
+        static char chartPath[512] = "";
 
         if (ImGui::IsWindowAppearing()) {
-            strncpy(levelName, "level", sizeof(levelName) - 1);
-            strncpy(levelPath, currentDirectory.c_str(), sizeof(levelPath) - 1);
+            if (chartTitle.empty()) {
+                strncpy(chartName, currentSongName.c_str(), sizeof(chartName) - 1);
+            } else {
+                strncpy(chartName, chartTitle.c_str(), sizeof(chartName) - 1);
+            }
+            strncpy(chartPath, currentDirectory.c_str(), sizeof(chartPath) - 1);
         }
 
-        ImGui::Text("Level Name:");
-        ImGui::InputText("##levelName", levelName, sizeof(levelName));
+        ImGui::Text("Chart Title:");
+        ImGui::InputText("##chartTitle", chartName, sizeof(chartName));
+        chartTitle = chartName;
+
+        ImGui::Text("Artist:");
+        static char artistBuffer[256] = "";
+        if (ImGui::IsWindowAppearing()) {
+            strncpy(artistBuffer, chartArtist.c_str(), sizeof(artistBuffer) - 1);
+        }
+        if (ImGui::InputText("##chartArtist", artistBuffer, sizeof(artistBuffer))) {
+            chartArtist = artistBuffer;
+        }
 
         ImGui::Text("Save Path:");
-        ImGui::InputText("##levelPath", levelPath, sizeof(levelPath));
+        ImGui::InputText("##chartPath", chartPath, sizeof(chartPath));
 
         ImGui::Separator();
 
         if (ImGui::Button("Save", ImVec2(80, 25))) {
-            // TODO: Implement actual saving
-            std::string fullPath = std::string(levelPath) + "/" + std::string(levelName) + ".level";
-            // Save level data here
-            ImGui::CloseCurrentPopup();
+            std::string fullPath = std::string(chartPath) + "/" + std::string(chartName) + ".chart";
+            if (saveChartFile(fullPath)) {
+                ImGui::CloseCurrentPopup();
+            }
         }
 
         ImGui::SameLine();
@@ -1089,25 +1145,30 @@ void Editor::render() {
         ImGui::EndPopup();
     }
 
-    if (ImGui::BeginPopupModal("Load Level", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Load Level");
+    if (showLoadDialog) {
+        ImGui::OpenPopup("Load Chart");
+        showLoadDialog = false;
+    }
+
+    if (ImGui::BeginPopupModal("Load Chart", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Load Chart File");
         ImGui::Separator();
 
-        static char levelPath[512] = "";
+        static char chartPath[512] = "";
 
         if (ImGui::IsWindowAppearing()) {
-            strncpy(levelPath, currentDirectory.c_str(), sizeof(levelPath) - 1);
+            strncpy(chartPath, currentDirectory.c_str(), sizeof(chartPath) - 1);
         }
 
-        ImGui::Text("Level File Path:");
-        ImGui::InputText("##loadLevelPath", levelPath, sizeof(levelPath));
+        ImGui::Text("Chart File Path:");
+        ImGui::InputText("##loadChartPath", chartPath, sizeof(chartPath));
 
         ImGui::Separator();
 
         if (ImGui::Button("Load", ImVec2(80, 25))) {
-            // TODO: Implement actual loading
-            // Load level data here
-            ImGui::CloseCurrentPopup();
+            if (loadChartFile(chartPath)) {
+                ImGui::CloseCurrentPopup();
+            }
         }
 
         ImGui::SameLine();
@@ -1115,6 +1176,16 @@ void Editor::render() {
             ImGui::CloseCurrentPopup();
         }
 
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::BeginPopupModal("No Song Loaded", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("No song loaded!");
+        ImGui::Text("Please load a song first before saving a chart.");
+        ImGui::Separator();
+        if (ImGui::Button("OK", ImVec2(80, 25))) {
+            ImGui::CloseCurrentPopup();
+        }
         ImGui::EndPopup();
     }
 
@@ -1143,6 +1214,8 @@ void Editor::refreshFileList() {
 
                 if (extension == ".mp3" || extension == ".wav" || extension == ".ogg" ||
                     extension == ".flac" || extension == ".m4a" || extension == ".aac") {
+                    files.push_back(entry.path().filename().string());
+                } else if (extension == ".chart") {
                     files.push_back(entry.path().filename().string());
                 }
             }
@@ -1376,6 +1449,212 @@ void Editor::sortNotes() {
                 return a.id < b.id;
             });
             break;
+    }
+}
+
+bool Editor::saveChartFile(const std::string& filepath) {
+    if (!isSongLoaded || currentSongPath.empty()) {
+        std::cerr << "No song loaded to save" << std::endl;
+        return false;
+    }
+
+    std::vector<char> audioData = readAudioFile(currentSongPath);
+    if (audioData.empty()) {
+        std::cerr << "Failed to read audio file: " << currentSongPath << std::endl;
+        return false;
+    }
+
+    ChartHeader header;
+    memset(&header, 0, sizeof(ChartHeader));
+    strcpy(header.magic, "NOTARHYTHM");
+    header.version = 1;
+    header.headerSize = sizeof(ChartHeader);
+    header.audioSize = static_cast<uint32_t>(audioData.size());
+    header.notesCount = static_cast<uint32_t>(nodeManager.getNotes().size());
+    header.bpm = bpm;
+    header.duration = songDuration;
+
+    strncpy(header.title, chartTitle.c_str(), sizeof(header.title) - 1);
+    strncpy(header.artist, chartArtist.c_str(), sizeof(header.artist) - 1);
+
+    std::cout << "Saving chart with magic: " << header.magic << std::endl;
+    std::cout << "Audio size: " << header.audioSize << " bytes" << std::endl;
+    std::cout << "Notes count: " << header.notesCount << std::endl;
+    std::cout << "Title: " << header.title << std::endl;
+    std::cout << "Artist: " << header.artist << std::endl;
+
+    std::ofstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to create chart file: " << filepath << std::endl;
+        return false;
+    }
+
+    file.write(reinterpret_cast<const char*>(&header), sizeof(ChartHeader));
+    if (!file.good()) {
+        std::cerr << "Failed to write header" << std::endl;
+        return false;
+    }
+
+    file.write(audioData.data(), audioData.size());
+    if (!file.good()) {
+        std::cerr << "Failed to write audio data" << std::endl;
+        return false;
+    }
+
+    for (const auto& note : nodeManager.getNotes()) {
+        file.write(reinterpret_cast<const char*>(&note.id), sizeof(note.id));
+        file.write(reinterpret_cast<const char*>(&note.lane), sizeof(note.lane));
+        file.write(reinterpret_cast<const char*>(&note.timestamp), sizeof(note.timestamp));
+    }
+
+    file.close();
+    std::cout << "Chart saved successfully: " << filepath << std::endl;
+    return true;
+}
+
+bool Editor::loadChartFile(const std::string& filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open chart file: " << filepath << std::endl;
+        return false;
+    }
+
+    ChartHeader header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(ChartHeader));
+    if (!file.good()) {
+        std::cerr << "Failed to read chart header" << std::endl;
+        return false;
+    }
+
+    std::cout << "Loading chart with magic: " << header.magic << std::endl;
+    if (strcmp(header.magic, "NOTARHYTHM") != 0) {
+        std::cerr << "Invalid chart file format - wrong magic number: " << header.magic << std::endl;
+        return false;
+    }
+
+    if (header.version != 1) {
+        std::cerr << "Unsupported chart file version: " << header.version << std::endl;
+        return false;
+    }
+
+    std::cout << "Reading " << header.audioSize << " bytes of audio data" << std::endl;
+    std::vector<char> audioData(header.audioSize);
+    file.read(audioData.data(), header.audioSize);
+    if (!file.good()) {
+        std::cerr << "Failed to read audio data" << std::endl;
+        return false;
+    }
+    std::cout << "Successfully read " << audioData.size() << " bytes of audio data" << std::endl;
+
+    std::filesystem::path chartPath(filepath);
+    std::string tempAudioPath = chartPath.parent_path().string() + "/temp_audio_" + chartPath.stem().string() + ".wav";
+    if (!writeAudioFile(tempAudioPath, audioData)) {
+        std::cerr << "Failed to write temporary audio file: " << tempAudioPath << std::endl;
+        return false;
+    }
+
+    std::cout << "Loading audio from temporary file: " << tempAudioPath << std::endl;
+    if (!soundManager->loadSound("timeline_song", tempAudioPath)) {
+        std::cerr << "Failed to load audio from chart" << std::endl;
+        std::filesystem::remove(tempAudioPath);
+        return false;
+    }
+
+    currentSongPath = tempAudioPath;
+    currentSongName = header.title;
+    isSongLoaded = true;
+    currentPosition = 0.0;
+    isPlaying = false;
+    songDuration = header.duration;
+    bpm = header.bpm;
+    chartTitle = header.title;
+    chartArtist = header.artist;
+
+    nodeManager.clear();
+    selectedNoteId = -1;
+    hoveredNoteId = -1;
+    selectedNoteIds.clear();
+
+    for (uint32_t i = 0; i < header.notesCount; ++i) {
+        int id;
+        Core::Lane lane;
+        double timestamp;
+
+        file.read(reinterpret_cast<char*>(&id), sizeof(id));
+        file.read(reinterpret_cast<char*>(&lane), sizeof(lane));
+        file.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
+
+        if (!file.good()) {
+            std::cerr << "Failed to read note " << i << std::endl;
+            break;
+        }
+
+        nodeManager.addNoteWithId(id, static_cast<int>(lane), timestamp);
+    }
+
+    file.close();
+    calculateGridSpacing();
+
+    std::cout << "Chart loaded successfully: " << filepath << std::endl;
+    std::cout << "Title: " << chartTitle << std::endl;
+    std::cout << "Artist: " << chartArtist << std::endl;
+    std::cout << "BPM: " << bpm << std::endl;
+    std::cout << "Duration: " << songDuration << "s" << std::endl;
+    std::cout << "Notes: " << header.notesCount << std::endl;
+
+    return true;
+}
+
+std::vector<char> Editor::readAudioFile(const std::string& filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open audio file: " << filepath << std::endl;
+        return {};
+    }
+
+    file.seekg(0, std::ios::end);
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> buffer(size);
+    file.read(buffer.data(), size);
+    file.close();
+
+    return buffer;
+}
+
+bool Editor::writeAudioFile(const std::string& filepath, const std::vector<char>& audioData) {
+    std::ofstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to create audio file: " << filepath << std::endl;
+        return false;
+    }
+
+    file.write(audioData.data(), audioData.size());
+    file.close();
+    return true;
+}
+
+void Editor::extractAudioFromChart(const std::string& chartPath, const std::string& outputPath) {
+    std::ifstream file(chartPath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open chart file: " << chartPath << std::endl;
+        return;
+    }
+
+    ChartHeader header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(ChartHeader));
+    if (!file.good() || strcmp(header.magic, "NOTARHYTHM") != 0) {
+        std::cerr << "Invalid chart file format" << std::endl;
+        return;
+    }
+
+    std::vector<char> audioData(header.audioSize);
+    file.read(audioData.data(), header.audioSize);
+    file.close();
+
+    if (writeAudioFile(outputPath, audioData)) {
+        std::cout << "Audio extracted to: " << outputPath << std::endl;
     }
 }
 
