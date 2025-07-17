@@ -19,6 +19,7 @@
 
 #include "SoundManager.hpp"
 #include "NodeManager.hpp"
+#include "Common.hpp"
 
 #define BASS_DEFAULT_DEVICE -1
 #define BASS_MAX_FREQUENCY 44100
@@ -29,38 +30,16 @@
 namespace App {
 namespace Windows {
 
-    struct SeekPerZoom {
-        static constexpr std::array<std::tuple<float, float>, 4> data = {
-            std::tuple<float, float>{1.0f, 5.0f},
-            std::tuple<float, float>{5.0f, 2.5f},
-            std::tuple<float, float>{10.0f, 1.0f},
-            std::tuple<float, float>{15.0f, 0.250f},
-        };
-    };
-
     enum SortOrder {
         TIME = 0,
         LANE = 1,
         ID = 2,
     };
 
-    struct ChartHeader {
-        char magic[12];        // "NOTARHYTHM" (11 chars + null terminator)
-        uint32_t version;      // File format version
-        uint32_t headerSize;   // Size of this header
-        uint32_t audioSize;    // Size of embedded audio data
-        uint32_t notesCount;   // Number of notes
-        char title[256];       // Song title
-        char artist[256];      // Artist name
-        float bpm;             // Beats per minute
-        double duration;       // Song duration in seconds
-        uint32_t reserved[16]; // Reserved for future use
-    };
-
     class Editor {
         private:
             // Audio management
-            std::unique_ptr<Core::SoundManager> soundManager;
+            Core::SoundManager* soundManager;
             std::string currentSongPath;
             std::string currentSongName;
             bool isSongLoaded;
@@ -135,6 +114,7 @@ namespace Windows {
 
         public:
             Editor();
+            Editor(Core::SoundManager* soundManager);
             ~Editor() = default;
 
             void render();
