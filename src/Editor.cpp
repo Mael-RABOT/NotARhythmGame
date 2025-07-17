@@ -42,7 +42,6 @@ void Editor::drawTimelineLanes() {
             2.0f
         );
 
-        // Lane label
         const char* laneNames[2] = { "TOP", "BOTTOM" };
         ImVec2 textSize = ImGui::CalcTextSize(laneNames[lane]);
         ImVec2 textPos = ImVec2(content_pos.x + 5, y0 + (laneHeight - textSize.y) * 0.5f);
@@ -196,9 +195,19 @@ void Editor::handleNotePlacementAndInteraction() {
     static ImVec2 dragStartPos;
 
     if (ImGui::IsMouseClicked(0) && !ImGui::IsItemHovered()) {
-        selectedNoteId = -1;
-        selectedNoteIds.clear();
-        hoveredNoteId = -1;
+        bool clickingOnOtherWindow = false;
+        if (showNotesList && ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+            clickingOnOtherWindow = true;
+        }
+        if (showProperties && ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+            clickingOnOtherWindow = true;
+        }
+
+        if (!clickingOnOtherWindow) {
+            selectedNoteId = -1;
+            selectedNoteIds.clear();
+            hoveredNoteId = -1;
+        }
     }
 
     if (ImGui::IsItemHovered()) {
@@ -358,6 +367,48 @@ void Editor::handleNotePlacementAndInteraction() {
                 jumpToPosition(selectedNote);
             }
         }
+    }
+
+    static bool isRightDragging = false;
+    static ImVec2 rightDragStartPos;
+
+    if (ImGui::IsMouseClicked(1) && ImGui::IsItemHovered()) {
+        isRightDragging = true;
+        rightDragStartPos = ImGui::GetIO().MousePos;
+    }
+
+    if (isRightDragging && ImGui::IsMouseDown(1)) {
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        float rel_x = mouse.x - content_pos.x;
+
+        if (rel_x >= 0 && rel_x <= timelineWidth) {
+            double newPosition = visible_start + (rel_x / pixels_per_second);
+            newPosition = std::clamp(newPosition, 0.0, songDuration);
+
+            if (soundManager) {
+                soundManager->setPosition("timeline_song", newPosition);
+                currentPosition = newPosition;
+
+                if (enableAutoscroll) {
+                    float visible_duration = songDuration / zoomLevel;
+                    float border_threshold = visible_duration * 0.2f;
+
+                    if (newPosition < scrollOffset + border_threshold) {
+                        float target_scroll = newPosition - (visible_duration * 0.3f);
+                        target_scroll = std::max(0.0f, target_scroll);
+                        scrollOffset = target_scroll;
+                        targetScrollOffset = target_scroll;
+                    } else if (newPosition > scrollOffset + visible_duration - border_threshold) {
+                        float target_scroll = newPosition - (visible_duration * 0.7f);
+                        target_scroll = std::min(target_scroll, std::max(0.0f, static_cast<float>(songDuration - visible_duration)));
+                        scrollOffset = target_scroll;
+                        targetScrollOffset = target_scroll;
+                    }
+                }
+            }
+        }
+    } else if (isRightDragging && !ImGui::IsMouseDown(1)) {
+        isRightDragging = false;
     }
 
     if (!ImGui::IsItemHovered()) {
@@ -621,7 +672,6 @@ void Editor::drawTimelineRuler() {
     float visible_start = scrollOffset;
     float visible_end = visible_start + visible_duration;
 
-    // Find the first marker that should be visible
     float first_marker = std::floor(visible_start / markerInterval) * markerInterval;
 
     for (float time = first_marker; time <= visible_end + markerInterval; time += markerInterval) {
@@ -909,20 +959,20 @@ void Editor::render() {
 
     ImGui::SameLine();
     if (isSongLoaded && !isAnalyzing && !waveformLoaded) {
-        if (ImGui::Button("Generate Waveform", ImVec2(120, 20))) {
+        if (ImGui::Button("Generate Waveform", ImVec2(140, 20))) {
             analyzeAudioFile(currentSongPath);
         }
     } else if (isAnalyzing) {
         ImGui::BeginDisabled();
-        ImGui::Button("Generating...", ImVec2(120, 20));
+        ImGui::Button("Generating...", ImVec2(140, 20));
         ImGui::EndDisabled();
     } else if (waveformLoaded) {
-        if (ImGui::Button("Regenerate Waveform", ImVec2(120, 20))) {
+        if (ImGui::Button("Regenerate Waveform", ImVec2(140, 20))) {
             analyzeAudioFile(currentSongPath);
         }
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button("Generate Waveform", ImVec2(120, 20));
+        ImGui::Button("Generate Waveform", ImVec2(140, 20));
         ImGui::EndDisabled();
     }
 
@@ -1030,7 +1080,7 @@ void Editor::render() {
 
         ImGui::Text("Position: %d:%02d / %d:%02d", current_min, current_sec, total_min, total_sec);
         ImGui::Text("Zoom: %.2fx | Controls: Space=Play/Pause, <-/->=Seek, Enter=Move to song start, Scroll=Zoom", zoomLevel);
-        ImGui::Text("Editor: Click=Place Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust");
+        ImGui::Text("Editor: Click=Place Note, Double-click=Delete, Drag=Move, Ctrl+Arrows=Fine Adjust, Right-drag=Move Playhead");
         ImGui::Text("Multi-select: Ctrl+Click, Delete=Remove Selected, Notes List for bulk operations");
 
         if (isAnalyzing) {
@@ -1041,6 +1091,33 @@ void Editor::render() {
                               waveformData.data.size(), waveformData.duration);
         } else if (showWaveform && isSongLoaded && !waveformLoaded) {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Waveform not generated - click 'Generate Waveform' to analyze audio");
+        }
+
+        if (showWaveform && waveformLoaded) {
+            ImGui::Separator();
+            ImGui::Text("Waveform Colors:");
+
+            ImGui::BeginGroup();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+            ImGui::Text("Strong Bass/Rhythm");
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.4f, 1.0f));
+            ImGui::Text("Moderate Intensity");
+            ImGui::PopStyleColor();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+            ImGui::Text("Low Intensity");
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
+            ImGui::Text("Very Low");
+            ImGui::PopStyleColor();
+
+            ImGui::EndGroup();
         }
 
         ImGui::EndGroup();
@@ -1772,8 +1849,7 @@ void Editor::drawWaveform() {
             ImVec2 content_pos = ImGui::GetCursorScreenPos();
             float timeline_y = content_pos.y + 30.0f;
 
-            // Single waveform area spanning both lanes
-            float waveformHeight = timelineHeight * 0.4f; // 40% of total timeline height
+            float waveformHeight = timelineHeight * 0.4f;
             float waveformY = timeline_y + (timelineHeight - waveformHeight) * 0.5f;
 
             draw_list->AddRectFilled(
@@ -1782,7 +1858,7 @@ void Editor::drawWaveform() {
                 IM_COL32(40, 40, 40, 100)
             );
 
-            const char* text = "Waveform not available";
+            const char* text = "\n\nWaveform not available";
             ImVec2 textSize = ImGui::CalcTextSize(text);
             ImVec2 textPos = ImVec2(
                 content_pos.x + (timelineWidth - textSize.x) * 0.5f,
@@ -1821,11 +1897,9 @@ void Editor::drawWaveform() {
 
     if (startIndex >= endIndex) return;
 
-    // Single waveform spanning both lanes
-    float waveformHeight = timelineHeight * 0.4f; // 40% of total timeline height
+    float waveformHeight = timelineHeight * 0.4f;
     float waveformY = timeline_y + (timelineHeight - waveformHeight) * 0.5f;
 
-    // Draw waveform background
     draw_list->AddRectFilled(
         ImVec2(content_pos.x, waveformY),
         ImVec2(content_pos.x + timelineWidth, waveformY + waveformHeight),
@@ -1838,14 +1912,23 @@ void Editor::drawWaveform() {
         float x1 = content_pos.x + (i - startIndex) * stepX;
         float x2 = content_pos.x + (i + 1 - startIndex) * stepX;
 
-        float amplitude1 = static_cast<float>((*waveform)[i]) * waveformHeight * 0.5f;
-        float amplitude2 = static_cast<float>((*waveform)[i + 1]) * waveformHeight * 0.5f;
+        float amplitude1 = static_cast<float>((*waveform)[i]) * waveformHeight * 0.45f * WAVEFORM_HEIGHT_MULTIPLIER;
+        float amplitude2 = static_cast<float>((*waveform)[i + 1]) * waveformHeight * 0.45f * WAVEFORM_HEIGHT_MULTIPLIER;
 
         float y1 = waveformY + waveformHeight * 0.5f - amplitude1;
         float y2 = waveformY + waveformHeight * 0.5f - amplitude2;
 
-        // Use a neutral color for the single waveform
-        ImU32 waveformColor = IM_COL32(100, 150, 255, 180);
+        ImU32 waveformColor;
+        float intensity = (static_cast<float>((*waveform)[i]) + static_cast<float>((*waveform)[i + 1])) * 0.5f;
+        if (intensity > 0.8f) {
+            waveformColor = IM_COL32(255, 100, 100, 220); // Red for strong bass/rhythm
+        } else if (intensity > 0.6f) {
+            waveformColor = IM_COL32(255, 150, 100, 200); // Orange for medium intensity
+        } else if (intensity > 0.4f) {
+            waveformColor = IM_COL32(100, 200, 255, 180); // Blue for moderate intensity
+        } else {
+            waveformColor = IM_COL32(100, 150, 255, 150); // Light blue for low intensity
+        }
 
         draw_list->AddLine(
             ImVec2(x1, y1),
@@ -1862,7 +1945,6 @@ void Editor::drawWaveform() {
         );
     }
 
-    // Draw center line
     draw_list->AddLine(
         ImVec2(content_pos.x, waveformY + waveformHeight * 0.5f),
         ImVec2(content_pos.x + timelineWidth, waveformY + waveformHeight * 0.5f),

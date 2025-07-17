@@ -31,6 +31,8 @@
 #define MIN_ZOOM_LEVEL 1.0f
 #define MAX_ZOOM_LEVEL 50.0f
 
+#define WAVEFORM_HEIGHT_MULTIPLIER 2.5f
+
 namespace App {
 namespace Windows {
 

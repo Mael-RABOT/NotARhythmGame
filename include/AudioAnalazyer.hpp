@@ -59,6 +59,18 @@ struct AudioWaveform {
     double originalSampleRate;
 };
 
+/**
+ * AudioAnalyzer - Optimized for rhythm game chart creation
+ *
+ * The waveform generation is specifically tuned for rhythm games, emphasizing:
+ * - Bass frequencies (below ~200Hz) with 2.5x weight
+ * - Rhythmic patterns and onset detection with 2.0x weight
+ * - Onset energy (sudden changes) with 1.8x weight
+ * - Volume/amplitude with reduced 0.3x weight
+ *
+ * This ensures that bass drops, drum hits, and rhythmic elements are prominently
+ * displayed in the waveform, making it easier to create accurate charts.
+ */
 class AudioAnalyzer {
 private:
     std::function<void(const AnalysisProgress&)> progressCallback;
