@@ -194,6 +194,12 @@ void Editor::handleNotePlacementAndInteraction() {
     static int draggedNoteId = -1;
     static ImVec2 dragStartPos;
 
+    if (ImGui::IsMouseClicked(0) && !ImGui::IsItemHovered()) {
+        selectedNoteId = -1;
+        selectedNoteIds.clear();
+        hoveredNoteId = -1;
+    }
+
     if (ImGui::IsItemHovered()) {
         ImVec2 mouse = ImGui::GetIO().MousePos;
         float rel_x = mouse.x - content_pos.x;
@@ -451,7 +457,6 @@ void Editor::loadSong(const std::string& filepath) {
 
         songDuration = soundManager->getDuration("timeline_song");
 
-        std::cout << "Loaded song: " << currentSongName << " (Duration: " << songDuration << "s)" << std::endl;
     } else {
         std::cerr << "Failed to load song: " << filepath << std::endl;
     }
@@ -1477,12 +1482,6 @@ bool Editor::saveChartFile(const std::string& filepath) {
     strncpy(header.title, chartTitle.c_str(), sizeof(header.title) - 1);
     strncpy(header.artist, chartArtist.c_str(), sizeof(header.artist) - 1);
 
-    std::cout << "Saving chart with magic: " << header.magic << std::endl;
-    std::cout << "Audio size: " << header.audioSize << " bytes" << std::endl;
-    std::cout << "Notes count: " << header.notesCount << std::endl;
-    std::cout << "Title: " << header.title << std::endl;
-    std::cout << "Artist: " << header.artist << std::endl;
-
     std::ofstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to create chart file: " << filepath << std::endl;
@@ -1508,7 +1507,6 @@ bool Editor::saveChartFile(const std::string& filepath) {
     }
 
     file.close();
-    std::cout << "Chart saved successfully: " << filepath << std::endl;
     return true;
 }
 
@@ -1526,7 +1524,6 @@ bool Editor::loadChartFile(const std::string& filepath) {
         return false;
     }
 
-    std::cout << "Loading chart with magic: " << header.magic << std::endl;
     if (strcmp(header.magic, "NOTARHYTHM") != 0) {
         std::cerr << "Invalid chart file format - wrong magic number: " << header.magic << std::endl;
         return false;
@@ -1537,14 +1534,12 @@ bool Editor::loadChartFile(const std::string& filepath) {
         return false;
     }
 
-    std::cout << "Reading " << header.audioSize << " bytes of audio data" << std::endl;
     std::vector<char> audioData(header.audioSize);
     file.read(audioData.data(), header.audioSize);
     if (!file.good()) {
         std::cerr << "Failed to read audio data" << std::endl;
         return false;
     }
-    std::cout << "Successfully read " << audioData.size() << " bytes of audio data" << std::endl;
 
     std::filesystem::path chartPath(filepath);
     std::string tempAudioPath = chartPath.parent_path().string() + "/temp_audio_" + chartPath.stem().string() + ".wav";
@@ -1553,7 +1548,6 @@ bool Editor::loadChartFile(const std::string& filepath) {
         return false;
     }
 
-    std::cout << "Loading audio from temporary file: " << tempAudioPath << std::endl;
     if (!soundManager->loadSound("timeline_song", tempAudioPath)) {
         std::cerr << "Failed to load audio from chart" << std::endl;
         std::filesystem::remove(tempAudioPath);
@@ -1594,13 +1588,6 @@ bool Editor::loadChartFile(const std::string& filepath) {
 
     file.close();
     calculateGridSpacing();
-
-    std::cout << "Chart loaded successfully: " << filepath << std::endl;
-    std::cout << "Title: " << chartTitle << std::endl;
-    std::cout << "Artist: " << chartArtist << std::endl;
-    std::cout << "BPM: " << bpm << std::endl;
-    std::cout << "Duration: " << songDuration << "s" << std::endl;
-    std::cout << "Notes: " << header.notesCount << std::endl;
 
     return true;
 }
@@ -1653,9 +1640,7 @@ void Editor::extractAudioFromChart(const std::string& chartPath, const std::stri
     file.read(audioData.data(), header.audioSize);
     file.close();
 
-    if (writeAudioFile(outputPath, audioData)) {
-        std::cout << "Audio extracted to: " << outputPath << std::endl;
-    }
+    writeAudioFile(outputPath, audioData);
 }
 
 } // Windows
