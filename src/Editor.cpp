@@ -365,7 +365,7 @@ void Editor::handleNotePlacementAndInteraction() {
 }
 
 Editor::Editor()
-    : soundManager(std::make_unique<Core::SoundManager>()),
+    : soundManager(nullptr),
       currentSongPath(""),
       currentSongName(""),
       isSongLoaded(false),
@@ -400,9 +400,56 @@ Editor::Editor()
       chartTitle(""),
       chartArtist("") {
 
-    if (!soundManager->initialize(BASS_DEFAULT_DEVICE, BASS_MAX_FREQUENCY, BASS_MIN_FREQUENCY)) {
-        std::cerr << "Failed to initialize sound manager" << std::endl;
+    calculateGridSpacing();
+    refreshFileList();
+
+    const char* home = getenv("HOME");
+    if (home) {
+        currentDirectory = std::string(home) + "/Music";
+        if (!std::filesystem::exists(currentDirectory)) {
+            currentDirectory = home;
+        }
+    } else {
+        currentDirectory = ".";
     }
+    refreshFileList();
+}
+
+Editor::Editor(Core::SoundManager* soundManager)
+    : soundManager(soundManager),
+      currentSongPath(""),
+      currentSongName(""),
+      isSongLoaded(false),
+      isPlaying(false),
+      currentPosition(0.0),
+      songDuration(0.0),
+      bpm(120.0f),
+      showGrid(true),
+      enableAutoscroll(true),
+      markerInterval(5.0),
+      gridSpacing(0.5f),
+      timelineWidth(800.0f),
+      timelineHeight(200.0f),
+      zoomLevel(1.0f),
+      scrollOffset(0.0f),
+      targetScrollOffset(0.0f),
+      minZoomLevel(1.0f),
+      maxZoomLevel(20.0f),
+      showFileDialog(false),
+      selectedFileIndex(-1),
+      selectedNoteId(-1),
+      hoveredNoteId(-1),
+      showNotesList(false),
+      showProperties(false),
+      snapToGrid(true),
+      showNoteIds(false),
+      showMilliseconds(false),
+      noteRadius(12.0f),
+      sortOrder(SortOrder::TIME),
+      showSaveDialog(false),
+      showLoadDialog(false),
+      chartTitle(""),
+      chartArtist("") {
 
     calculateGridSpacing();
     refreshFileList();
@@ -446,6 +493,8 @@ void Editor::updateAutoscroll() {
 }
 
 void Editor::loadSong(const std::string& filepath) {
+    if (!soundManager) return;
+
     size_t lastSlash = filepath.find_last_of("/\\");
     currentSongName = (lastSlash != std::string::npos) ? filepath.substr(lastSlash + 1) : filepath;
 
@@ -463,7 +512,7 @@ void Editor::loadSong(const std::string& filepath) {
 }
 
 void Editor::updatePlayback() {
-    if (!isSongLoaded) return;
+    if (!soundManager || !isSongLoaded) return;
 
     currentPosition = soundManager->getPosition("timeline_song");
 
@@ -475,7 +524,7 @@ void Editor::updatePlayback() {
 }
 
 void Editor::handleKeyboardInput() {
-    if (!isSongLoaded) return;
+    if (!soundManager || !isSongLoaded) return;
 
     if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
         if (isPlaying) {
@@ -722,8 +771,6 @@ void Editor::update() {
 }
 
 void Editor::render() {
-    ImGui::DockSpaceOverViewport();
-
     ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_NoCollapse);
 
     ImGui::BeginGroup();
@@ -743,7 +790,7 @@ void Editor::render() {
 
     ImGui::SameLine();
     if (ImGui::Button(isPlaying ? "Pause" : "Play", ImVec2(60, 25))) {
-        if (isSongLoaded) {
+        if (soundManager && isSongLoaded) {
             if (isPlaying) {
                 soundManager->pauseSound("timeline_song");
                 isPlaying = false;
@@ -756,7 +803,7 @@ void Editor::render() {
 
     ImGui::SameLine();
     if (ImGui::Button("Stop", ImVec2(60, 25))) {
-        if (isSongLoaded) {
+        if (soundManager && isSongLoaded) {
             soundManager->stopSound("timeline_song");
             isPlaying = false;
             soundManager->setPosition("timeline_song", 0.0);

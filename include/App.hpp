@@ -3,10 +3,16 @@
 #include "imgui.h"
 
 #include "Editor.hpp"
-#include "SoundManager.hpp"
+#include "Player.hpp"
 
 namespace App
 {
+    enum class AppMode {
+        MAIN_MENU = 0,
+        EDITOR = 1,
+        PLAYER = 2
+    };
+
     class Config {
         private:
             ImGuiIO& io;
@@ -19,4 +25,5 @@ namespace App
     };
 
     void run();
+    void showMainMenu(AppMode& currentMode);
 }
