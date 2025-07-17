@@ -1273,8 +1273,10 @@ void Player::drawApproachingNotes() {
     float lane_width = window_size.x - 100.0f;
 
     for (const auto& note : gameNotes) {
-        if (note.isActive && !note.hit) {
+        if (note.isActive) {
             if (note.type == Core::NoteType::TAP) {
+                if (note.hit) continue;
+
                 double time_until_hit = note.timestamp - currentPosition;
 
                 if (time_until_hit >= -judgementWindow && time_until_hit <= approachTime) {
@@ -1292,15 +1294,23 @@ void Player::drawApproachingNotes() {
                         ImVec4 note_color = (note.lane == Core::Lane::TOP) ? noteTopColor : noteBottomColor;
                         ImVec2 note_center(note_x, note_y);
 
-                        draw_list->AddCircleFilled(note_center, noteRadius * 1.5f,
-                                                 IM_COL32(note_color.x * 255, note_color.y * 255,
-                                                        note_color.z * 255, 50));
+                        float approach_intensity = 1.0f - progress;
+                        float glow_alpha = 40 + (int)(approach_intensity * 60);
+                        float main_alpha = 200 + (int)(approach_intensity * 55);
 
-                        draw_list->AddCircleFilled(note_center, noteRadius,
+                        draw_list->AddCircleFilled(note_center, noteRadius * 1.8f,
+                                                 IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                        note_color.z * 255, (int)glow_alpha));
+
+                        draw_list->AddCircleFilled(note_center, noteRadius * 1.2f,
+                                                 IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                        note_color.z * 255, (int)main_alpha));
+
+                        draw_list->AddCircleFilled(note_center, noteRadius * 0.8f,
                                                  IM_COL32(note_color.x * 255, note_color.y * 255,
                                                         note_color.z * 255, 255));
 
-                        draw_list->AddCircle(note_center, noteRadius,
+                        draw_list->AddCircle(note_center, noteRadius * 1.2f,
                                            IM_COL32(255, 255, 255, 200), 24, 2.0f);
                     }
                 }
@@ -1308,106 +1318,112 @@ void Player::drawApproachingNotes() {
                 double time_until_hit = note.timestamp - currentPosition;
                 double time_until_end = note.endTimestamp - currentPosition;
 
-                bool start_visible = (time_until_hit >= -judgementWindow && time_until_hit <= approachTime);
-                bool end_visible = (time_until_end >= -judgementWindow && time_until_end <= approachTime);
-                bool body_visible = (time_until_hit <= approachTime + 0.5 && time_until_end >= -judgementWindow - 0.5);
+                bool should_render = (time_until_end >= -judgementWindow);
 
-                if (start_visible || end_visible || body_visible) {
+                if (should_render) {
                     float progress_start = 1.0f - (time_until_hit / approachTime);
                     float progress_end = 1.0f - (time_until_end / approachTime);
 
                     float start_x = window_pos.x + window_size.x - 50.0f - progress_start * lane_width;
                     float end_x = window_pos.x + window_size.x - 50.0f - progress_end * lane_width;
 
-                    float display_start_x = start_x;
-                    float display_end_x = end_x;
+                    float display_start_x = std::max(start_x, window_pos.x);
+                    float display_end_x = std::min(end_x, window_pos.x + window_size.x);
 
-                    if (display_start_x < window_pos.x) {
-                        display_start_x = window_pos.x;
-                    }
-                    if (display_end_x > window_pos.x + window_size.x) {
-                        display_end_x = window_pos.x + window_size.x;
-                    }
+                    if (display_end_x > display_start_x) {
+                        float note_y = lane_y;
+                        if (note.lane == Core::Lane::BOTTOM) {
+                            note_y += laneHeight * 0.25f;
+                        } else {
+                            note_y -= laneHeight * 0.25f;
+                        }
 
-                    float note_y = lane_y;
-                    if (note.lane == Core::Lane::BOTTOM) {
-                        note_y += laneHeight * 0.25f;
-                    } else {
-                        note_y -= laneHeight * 0.25f;
-                    }
+                        ImVec4 note_color = (note.lane == Core::Lane::TOP) ? noteTopColor : noteBottomColor;
 
-                    ImVec4 note_color = (note.lane == Core::Lane::TOP) ? noteTopColor : noteBottomColor;
+                        if (note.hit && !note.holdCompleted) {
+                            note_color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                        }
 
-                    if (note.isHolding) {
-                        note_color = ImVec4(
-                            std::min(1.0f, note_color.x * 1.3f),
-                            std::min(1.0f, note_color.y * 1.3f),
-                            std::min(1.0f, note_color.z * 1.3f),
-                            note_color.w
-                        );
-                    }
+                        float approach_intensity = 1.0f - std::min(progress_start, progress_end);
+                        float base_alpha = note.isHolding ? 0.9f : 0.7f;
+                        float alpha = base_alpha + (approach_intensity * 0.2f);
 
-                    if (end_x > start_x) {
-                        float hold_height = noteRadius * 1.5f;
+                        float hold_height = noteRadius * 1.2f;
 
                         draw_list->AddRectFilled(
                             ImVec2(display_start_x, note_y - hold_height * 0.5f),
                             ImVec2(display_end_x, note_y + hold_height * 0.5f),
-                            IM_COL32(note_color.x * 255, note_color.y * 255, note_color.z * 255, 120)
+                            IM_COL32(note_color.x * 255, note_color.y * 255, note_color.z * 255, (int)(120 * alpha))
                         );
 
                         draw_list->AddRect(
                             ImVec2(display_start_x, note_y - hold_height * 0.5f),
                             ImVec2(display_end_x, note_y + hold_height * 0.5f),
-                            IM_COL32(note_color.x * 255, note_color.y * 255, note_color.z * 255, 200),
+                            IM_COL32(note_color.x * 255, note_color.y * 255, note_color.z * 255, (int)(200 * alpha)),
                             0.0f, 0, 2.0f
                         );
 
-                        if (note.isHolding && note.totalHoldTicks > 0) {
-                            float progress_ratio = static_cast<float>(note.holdTicks) / note.totalHoldTicks;
-                            float progress_width = (display_end_x - display_start_x) * progress_ratio;
+                        if (start_x >= window_pos.x - noteRadius * 2.0f &&
+                            start_x <= window_pos.x + window_size.x + noteRadius * 2.0f) {
 
-                            if (progress_width > 0) {
-                                draw_list->AddRectFilled(
-                                    ImVec2(display_start_x, note_y - hold_height * 0.5f),
-                                    ImVec2(display_start_x + progress_width, note_y + hold_height * 0.5f),
-                                    IM_COL32(255, 255, 255, 100)
+                            ImVec2 start_center(start_x, note_y);
+
+                            draw_list->AddCircleFilled(start_center, noteRadius * 1.8f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, 30));
+
+                            draw_list->AddCircleFilled(start_center, noteRadius * 1.2f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, (int)(200 * alpha)));
+
+                            draw_list->AddCircleFilled(start_center, noteRadius * 0.8f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, (int)(255 * alpha)));
+
+                            draw_list->AddCircle(start_center, noteRadius * 1.2f,
+                                               IM_COL32(255, 255, 255, (int)(200 * alpha)), 24, 2.0f);
+                        }
+
+                        if (end_x >= window_pos.x - noteRadius * 2.0f &&
+                            end_x <= window_pos.x + window_size.x + noteRadius * 2.0f) {
+
+                            ImVec2 end_center(end_x, note_y);
+
+                            draw_list->AddCircleFilled(end_center, noteRadius * 1.5f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, 30));
+
+                            draw_list->AddCircleFilled(end_center, noteRadius * 1.0f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, (int)(180 * alpha)));
+
+                            draw_list->AddCircleFilled(end_center, noteRadius * 0.6f,
+                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
+                                                            note_color.z * 255, (int)(220 * alpha)));
+
+                            draw_list->AddCircle(end_center, noteRadius * 1.0f,
+                                               IM_COL32(255, 255, 255, (int)(180 * alpha)), 24, 2.0f);
+                        }
+
+                        if (note.isHolding) {
+                            float pulse = 0.5f + 0.3f * std::sin(currentPosition * 8.0f);
+                            float pulse_radius = noteRadius * 0.3f * pulse;
+
+                            double hold_progress = 0.0;
+                            if (note.endTimestamp > note.timestamp) {
+                                hold_progress = (currentPosition - note.timestamp) / (note.endTimestamp - note.timestamp);
+                                hold_progress = std::clamp(hold_progress, 0.0, 1.0);
+                            }
+
+                            float pulse_x = display_start_x + (display_end_x - display_start_x) * static_cast<float>(hold_progress);
+
+                            if (pulse_x >= window_pos.x && pulse_x <= window_pos.x + window_size.x) {
+                                draw_list->AddCircleFilled(
+                                    ImVec2(pulse_x, note_y),
+                                    pulse_radius,
+                                    IM_COL32(255, 255, 255, (int)(100 * pulse))
                                 );
                             }
-                        }
-                    }
-
-                    if (start_visible || time_until_hit <= approachTime + 2.0) {
-                        ImVec2 start_center(start_x, note_y);
-
-                        if (start_x >= window_pos.x - noteRadius * 3.0f &&
-                            start_x <= window_pos.x + window_size.x + noteRadius * 3.0f) {
-
-                            draw_list->AddCircleFilled(start_center, noteRadius * 1.5f,
-                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
-                                                            note_color.z * 255, 50));
-                            draw_list->AddCircleFilled(start_center, noteRadius,
-                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
-                                                            note_color.z * 255, 255));
-                            draw_list->AddCircle(start_center, noteRadius,
-                                               IM_COL32(255, 255, 255, 200), 24, 2.0f);
-                        }
-                    }
-
-                    if (end_visible || time_until_end <= approachTime + 2.0) {
-                        ImVec2 end_center(end_x, note_y);
-
-                        if (end_x >= window_pos.x - noteRadius * 3.0f &&
-                            end_x <= window_pos.x + window_size.x + noteRadius * 3.0f) {
-
-                            draw_list->AddCircleFilled(end_center, noteRadius * 1.2f,
-                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
-                                                            note_color.z * 255, 50));
-                            draw_list->AddCircleFilled(end_center, noteRadius * 0.8f,
-                                                     IM_COL32(note_color.x * 255, note_color.y * 255,
-                                                            note_color.z * 255, 255));
-                            draw_list->AddCircle(end_center, noteRadius * 0.8f,
-                                               IM_COL32(255, 255, 255, 200), 24, 2.0f);
                         }
                     }
                 }
