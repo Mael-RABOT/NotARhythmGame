@@ -605,10 +605,12 @@ Editor::Editor()
       showSaveDialog(false),
       showLoadDialog(false),
       chartTitle(""),
-      chartArtist("") {
+      chartArtist(""),
+      speedOverrideEnabled(false),
+      playbackSpeed(1.0f),
+      originalPlaybackSpeed(1.0f) {
 
     calculateGridSpacing();
-    refreshFileList();
 
     const char* home = getenv("HOME");
     if (home) {
@@ -662,10 +664,12 @@ Editor::Editor(Core::SoundManager* soundManager)
       showSaveDialog(false),
       showLoadDialog(false),
       chartTitle(""),
-      chartArtist("") {
+      chartArtist(""),
+      speedOverrideEnabled(false),
+      playbackSpeed(1.0f),
+      originalPlaybackSpeed(1.0f) {
 
     calculateGridSpacing();
-    refreshFileList();
 
     const char* home = getenv("HOME");
     if (home) {
@@ -1040,6 +1044,21 @@ void Editor::render() {
             scrollOffset = 0.0f;
             targetScrollOffset = 0.0f;
         }
+    }
+
+    if (speedOverrideEnabled) {
+        float currentSpeed = soundManager ? soundManager->getCurrentPlaybackSpeed("timeline_song") : playbackSpeed;
+        ImGui::Text("Playback Speed: %.2fx", currentSpeed);
+        if (ImGui::SliderFloat("##playbackSpeed", &playbackSpeed, 0.1f, 2.0f, "%.2fx")) {
+            if (soundManager && isSongLoaded) {
+                soundManager->setPlaybackSpeed("timeline_song", playbackSpeed);
+            }
+        }
+    } else {
+        ImGui::BeginDisabled();
+        ImGui::Text("Playback Speed: %.2fx", playbackSpeed);
+        ImGui::SliderFloat("##playbackSpeed", &playbackSpeed, 0.1f, 2.0f, "%.2fx");
+        ImGui::EndDisabled();
     }
 
     ImGui::EndGroup();

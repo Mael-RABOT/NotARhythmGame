@@ -11,6 +11,8 @@ namespace Core {
 class SoundManager {
 private:
     std::unordered_map<std::string, HSTREAM> loadedSounds;
+    std::unordered_map<std::string, double> originalDurations;
+    std::unordered_map<std::string, float> originalSpeeds;
     bool initialized;
 
 public:
@@ -36,6 +38,10 @@ public:
     bool setPosition(const std::string& name, double position);
     double getDuration(const std::string& name);
     bool seekTo(const std::string& name, double position);
+
+    float getPlaybackSpeed(const std::string& name);
+    float getCurrentPlaybackSpeed(const std::string& name);
+    bool setPlaybackSpeed(const std::string& name, float speed);
 
     void unloadSound(const std::string& name);
     void unloadAllSounds();
