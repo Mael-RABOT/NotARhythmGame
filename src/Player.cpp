@@ -414,124 +414,130 @@ void Player::updateGameLogic() {
 
 void Player::processInput() {
     double currentTime = currentPosition;
-    std::vector<int> processedNotes;
+
+    GameNote* bestTopNote = nullptr;
+    GameNote* bestBottomNote = nullptr;
+    double bestTopTimeDiff = judgementWindow;
+    double bestBottomTimeDiff = judgementWindow;
 
     for (auto& note : gameNotes) {
-        if (note.isActive && !note.hit &&
-            std::find(processedNotes.begin(), processedNotes.end(), note.id) == processedNotes.end()) {
-
+        if (note.isActive && !note.hit) {
             if (note.type == Core::NoteType::TAP) {
                 double time_diff = std::abs(currentTime - note.timestamp);
 
                 if (time_diff <= judgementWindow) {
-                    bool correct_key = false;
-                    if (note.lane == Core::Lane::TOP && fKeyPressed) {
-                        correct_key = true;
-                    } else if (note.lane == Core::Lane::BOTTOM && jKeyPressed) {
-                        correct_key = true;
-                    }
-
-                    if (correct_key) {
-                        note.hit = true;
-                        note.hitTime = currentTime;
-                        Judgement judgement = calculateJudgement(currentTime, note.timestamp);
-                        note.judgement = judgement;
-                        updateStats(judgement);
-
-                        ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
-                        if (note.lane == Core::Lane::BOTTOM) {
-                            hitPosition.y += laneHeight * 0.25f;
-                        } else {
-                            hitPosition.y -= laneHeight * 0.25f;
-                        }
-                        createHitEffect(hitPosition, judgement);
-
-                        playHitSound();
-
-                        showJudgement = true;
-                        judgementDisplayTime = 0.5;
-                        switch (judgement) {
-                            case PERFECT:
-                                lastJudgementText = "PERFECT";
-                                lastJudgementColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
-                                break;
-                            case GREAT:
-                                lastJudgementText = "GREAT";
-                                lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-                                break;
-                            case GOOD:
-                                lastJudgementText = "GOOD";
-                                lastJudgementColor = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
-                                break;
-                            case MISS:
-                                lastJudgementText = "MISS";
-                                lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-                                break;
-                        }
-
-                        processedNotes.push_back(note.id);
+                    if (note.lane == Core::Lane::TOP && time_diff < bestTopTimeDiff) {
+                        bestTopNote = &note;
+                        bestTopTimeDiff = time_diff;
+                    } else if (note.lane == Core::Lane::BOTTOM && time_diff < bestBottomTimeDiff) {
+                        bestBottomNote = &note;
+                        bestBottomTimeDiff = time_diff;
                     }
                 }
-            } else if (note.type == Core::NoteType::HOLD) {
-                if (!note.isHolding) {
-                    double time_diff = std::abs(currentTime - note.timestamp);
+            } else if (note.type == Core::NoteType::HOLD && !note.isHolding) {
+                double time_diff = std::abs(currentTime - note.timestamp);
 
-                    if (time_diff <= judgementWindow) {
-                        bool correct_key = false;
-                        if (note.lane == Core::Lane::TOP && fKeyPressed) {
-                            correct_key = true;
-                        } else if (note.lane == Core::Lane::BOTTOM && jKeyPressed) {
-                            correct_key = true;
-                        }
-
-                        if (correct_key) {
-                            note.isHolding = true;
-                            note.holdStartTime = currentTime;
-                            note.hitTime = currentTime;
-                            note.lastHoldTickTime = currentTime;
-                            note.holdTicks = 0;
-                            note.totalHoldTicks = static_cast<int>((note.endTimestamp - note.timestamp) / holdTickInterval) + 1;
-
-                            Judgement judgement = calculateJudgement(currentTime, note.timestamp);
-                            note.judgement = judgement;
-                            updateStats(judgement);
-
-                            ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
-                            if (note.lane == Core::Lane::BOTTOM) {
-                                hitPosition.y += laneHeight * 0.25f;
-                            } else {
-                                hitPosition.y -= laneHeight * 0.25f;
-                            }
-                            createHitEffect(hitPosition, judgement);
-
-                            playHitSound();
-
-                            showJudgement = true;
-                            judgementDisplayTime = 0.5;
-                            switch (judgement) {
-                                case PERFECT:
-                                    lastJudgementText = "HOLD START";
-                                    lastJudgementColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
-                                    break;
-                                case GREAT:
-                                    lastJudgementText = "HOLD START";
-                                    lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-                                    break;
-                                case GOOD:
-                                    lastJudgementText = "HOLD START";
-                                    lastJudgementColor = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
-                                    break;
-                                case MISS:
-                                    lastJudgementText = "MISS";
-                                    lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-                                    break;
-                            }
-
-                            processedNotes.push_back(note.id);
-                        }
+                if (time_diff <= judgementWindow) {
+                    if (note.lane == Core::Lane::TOP && time_diff < bestTopTimeDiff) {
+                        bestTopNote = &note;
+                        bestTopTimeDiff = time_diff;
+                    } else if (note.lane == Core::Lane::BOTTOM && time_diff < bestBottomTimeDiff) {
+                        bestBottomNote = &note;
+                        bestBottomTimeDiff = time_diff;
                     }
                 }
             }
+        }
+    }
+
+    if (fKeyPressed && bestTopNote) {
+        processNoteHit(*bestTopNote, currentTime);
+    }
+
+    if (jKeyPressed && bestBottomNote) {
+        processNoteHit(*bestBottomNote, currentTime);
+    }
+}
+
+void Player::processNoteHit(GameNote& note, double currentTime) {
+    if (note.type == Core::NoteType::TAP) {
+        note.hit = true;
+        note.hitTime = currentTime;
+        Judgement judgement = calculateJudgement(currentTime, note.timestamp);
+        note.judgement = judgement;
+        updateStats(judgement);
+
+        ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+        if (note.lane == Core::Lane::BOTTOM) {
+            hitPosition.y += laneHeight * 0.25f;
+        } else {
+            hitPosition.y -= laneHeight * 0.25f;
+        }
+        createHitEffect(hitPosition, judgement);
+
+        playHitSound();
+
+        showJudgement = true;
+        judgementDisplayTime = 0.5;
+        switch (judgement) {
+            case PERFECT:
+                lastJudgementText = "PERFECT";
+                lastJudgementColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+                break;
+            case GREAT:
+                lastJudgementText = "GREAT";
+                lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+                break;
+            case GOOD:
+                lastJudgementText = "GOOD";
+                lastJudgementColor = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
+                break;
+            case MISS:
+                lastJudgementText = "MISS";
+                lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+                break;
+        }
+    } else if (note.type == Core::NoteType::HOLD) {
+        note.isHolding = true;
+        note.holdStartTime = currentTime;
+        note.hitTime = currentTime;
+        note.lastHoldTickTime = currentTime;
+        note.holdTicks = 0;
+        note.totalHoldTicks = static_cast<int>((note.endTimestamp - note.timestamp) / holdTickInterval) + 1;
+
+        Judgement judgement = calculateJudgement(currentTime, note.timestamp);
+        note.judgement = judgement;
+        updateStats(judgement);
+
+        ImVec2 hitPosition = ImVec2(50.0f, displaySize.y * 0.5f);
+        if (note.lane == Core::Lane::BOTTOM) {
+            hitPosition.y += laneHeight * 0.25f;
+        } else {
+            hitPosition.y -= laneHeight * 0.25f;
+        }
+        createHitEffect(hitPosition, judgement);
+
+        playHitSound();
+
+        showJudgement = true;
+        judgementDisplayTime = 0.5;
+        switch (judgement) {
+            case PERFECT:
+                lastJudgementText = "HOLD START";
+                lastJudgementColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+                break;
+            case GREAT:
+                lastJudgementText = "HOLD START";
+                lastJudgementColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+                break;
+            case GOOD:
+                lastJudgementText = "HOLD START";
+                lastJudgementColor = ImVec4(0.0f, 0.0f, 1.0f, 1.0f);
+                break;
+            case MISS:
+                lastJudgementText = "MISS";
+                lastJudgementColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+                break;
         }
     }
 }

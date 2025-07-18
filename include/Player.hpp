@@ -199,6 +199,7 @@ namespace Windows {
             void drawJudgement();
             void updateGameLogic();
             void processInput();
+            void processNoteHit(GameNote& note, double currentTime);
             void checkNoteHits();
             Judgement calculateJudgement(double hitTime, double noteTime);
             void updateStats(Judgement judgement);
