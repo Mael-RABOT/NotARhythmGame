@@ -103,6 +103,10 @@ namespace Windows {
             std::string chartTitle;
             std::string chartArtist;
 
+            bool speedOverrideEnabled;
+            float playbackSpeed;
+            float originalPlaybackSpeed;
+
             void loadSong(const std::string& filepath);
             void updatePlayback();
             void handleKeyboardInput();

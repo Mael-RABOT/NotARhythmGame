@@ -49,6 +49,16 @@ bool SoundManager::loadSound(const std::string& name, const std::string& filepat
         return false;
     }
 
+    QWORD length = BASS_ChannelGetLength(stream, BASS_POS_BYTE);
+    if (static_cast<int>(length) != -1) {
+        double duration = BASS_ChannelBytes2Seconds(stream, length);
+        originalDurations[name] = duration;
+    } else {
+        originalDurations[name] = 0.0;
+    }
+
+    originalSpeeds[name] = 1.0f;
+
     loadedSounds[name] = stream;
     return true;
 }
@@ -193,19 +203,12 @@ double SoundManager::getDuration(const std::string& name) {
         return 0.0;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = originalDurations.find(name);
+    if (it == originalDurations.end()) {
         return 0.0;
     }
 
-    QWORD length = BASS_ChannelGetLength(it->second, BASS_POS_BYTE);
-    if (static_cast<int>(length) == -1) {
-        return 0.0;
-    }
-
-    // Convert bytes to seconds
-    double duration = BASS_ChannelBytes2Seconds(it->second, length);
-    return duration;
+    return it->second;
 }
 
 bool SoundManager::seekTo(const std::string& name, double position) {
@@ -244,6 +247,9 @@ void SoundManager::unloadSound(const std::string& name) {
         BASS_StreamFree(it->second);
         loadedSounds.erase(it);
     }
+
+    originalDurations.erase(name);
+    originalSpeeds.erase(name);
 }
 
 void SoundManager::unloadAllSounds() {
@@ -251,6 +257,8 @@ void SoundManager::unloadAllSounds() {
         BASS_StreamFree(pair.second);
     }
     loadedSounds.clear();
+    originalDurations.clear();
+    originalSpeeds.clear();
 }
 
 std::string SoundManager::getLastError() {
@@ -293,6 +301,74 @@ std::string SoundManager::getLastError() {
         case BASS_ERROR_BUSY: return "The device is busy";
         default: return "Unknown error";
     }
+}
+
+float SoundManager::getPlaybackSpeed(const std::string& name) {
+    if (!initialized) {
+        return 1.0f;
+    }
+
+    auto it = originalSpeeds.find(name);
+    if (it == originalSpeeds.end()) {
+        return 1.0f;
+    }
+
+    return it->second;
+}
+
+float SoundManager::getCurrentPlaybackSpeed(const std::string& name) {
+    if (!initialized) {
+        return 1.0f;
+    }
+
+    auto it = loadedSounds.find(name);
+    if (it == loadedSounds.end()) {
+        return 1.0f;
+    }
+
+    float frequency = 44100.0f;
+    if (!BASS_ChannelGetAttribute(it->second, BASS_ATTRIB_FREQ, &frequency)) {
+        return 1.0f;
+    }
+
+    return frequency / 44100.0f;
+}
+
+bool SoundManager::setPlaybackSpeed(const std::string& name, float speed) {
+    if (!initialized) {
+        return false;
+    }
+
+    auto it = loadedSounds.find(name);
+    if (it == loadedSounds.end()) {
+        return false;
+    }
+
+    speed = std::max(0.1f, std::min(4.0f, speed));
+
+    DWORD state = BASS_ChannelIsActive(it->second);
+    bool wasPlaying = (state == BASS_ACTIVE_PLAYING);
+    bool wasPaused = (state == BASS_ACTIVE_PAUSED);
+
+    QWORD currentPos = BASS_ChannelGetPosition(it->second, BASS_POS_BYTE);
+
+    float frequency = 44100.0f * speed;
+
+    bool success = BASS_ChannelSetAttribute(it->second, BASS_ATTRIB_FREQ, frequency);
+
+    if (success) {
+        BASS_ChannelSetPosition(it->second, currentPos, BASS_POS_BYTE);
+
+        if (wasPlaying) {
+            BASS_ChannelPlay(it->second, FALSE);
+        } else if (wasPaused) {
+            BASS_ChannelPause(it->second);
+        }
+
+        originalSpeeds[name] = speed;
+    }
+
+    return success;
 }
 
 } // Core
