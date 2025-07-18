@@ -100,6 +100,7 @@ namespace Windows {
             // Chart file management
             bool showSaveDialog;
             bool showLoadDialog;
+            bool showHelpWindow;
             std::string chartTitle;
             std::string chartArtist;
 
@@ -121,8 +122,9 @@ namespace Windows {
             void drawTimelineLanes();
             void handleNotePlacementAndInteraction();
             void drawNotesList();
-            void jumpToPosition(Core::Note* note);
             void drawPropertiesPanel();
+            void drawHelpWindow();
+            void jumpToPosition(Core::Note* note);
             void sortNotes();
             void analyzeAudioFile(const std::string& filepath);
             void onAnalysisProgress(const AnalysisProgress& progress);
