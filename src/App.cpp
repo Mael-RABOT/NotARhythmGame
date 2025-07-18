@@ -2,6 +2,16 @@
 
 namespace App
 {
+    bool shouldShutdown = false;
+
+    void requestShutdown() {
+        shouldShutdown = true;
+    }
+
+    bool isShutdownRequested() {
+        return shouldShutdown;
+    }
+
     Config::Config() : io(ImGui::GetIO()) {}
 
     void Config::configure() {
@@ -61,8 +71,12 @@ namespace App
             configured = true;
         }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape) && currentMode == AppMode::EDITOR) {
-            currentMode = AppMode::MAIN_MENU;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) && ImGui::GetIO().KeyCtrl) {
+            if (currentMode == AppMode::MAIN_MENU) {
+                requestShutdown();
+            } else {
+                currentMode = AppMode::MAIN_MENU;
+            }
         }
 
         switch (currentMode) {

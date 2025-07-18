@@ -146,7 +146,7 @@ int main(int argc, char** argv)
     io.IniFilename = nullptr;
     EMSCRIPTEN_MAINLOOP_BEGIN
 #else
-    while (!glfwWindowShouldClose(window))
+    while (!glfwWindowShouldClose(window) && !App::isShutdownRequested())
 #endif
     {
         // Poll and handle events (inputs, window resize, etc.)
