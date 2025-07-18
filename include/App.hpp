@@ -24,6 +24,10 @@ namespace App
             void configure();
     };
 
+    extern bool shouldShutdown;
+    void requestShutdown();
+    bool isShutdownRequested();
+
     void run();
     void showMainMenu(AppMode& currentMode);
 }

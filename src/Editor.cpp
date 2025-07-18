@@ -742,7 +742,10 @@ void Editor::updatePlayback() {
 }
 
 void Editor::handleKeyboardInput() {
-    if (!soundManager || !isSongLoaded) return;
+    if (showFileDialog || showSaveDialog || showLoadDialog) return;
+
+    if (ImGui::IsPopupOpen("File Browser") || ImGui::IsPopupOpen("Save Chart") ||
+        ImGui::IsPopupOpen("Load Chart") || ImGui::IsPopupOpen("No Song Loaded")) return;
 
     if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
         if (isPlaying) {
@@ -2452,11 +2455,12 @@ void Editor::drawHelpWindow() {
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "TIPS");
     ImGui::Separator();
-    ImGui::Text("• Use snap to grid for precise note placement");
-    ImGui::Text("• Hold Shift while placing notes to create hold notes");
-    ImGui::Text("• Speed override affects playback speed without changing pitch");
-    ImGui::Text("• Use auto-scroll to keep the cursor in view while playing");
-    ImGui::Text("• Zoom controls help with detailed editing");
+    ImGui::Text("- Use ctrl+esc to exit the editor");
+    ImGui::Text("- Use snap to grid for precise note placement");
+    ImGui::Text("- Hold Shift while placing notes to create hold notes");
+    ImGui::Text("- Speed override affects playback speed without changing pitch");
+    ImGui::Text("- Use auto-scroll to keep the cursor in view while playing");
+    ImGui::Text("- Zoom controls help with detailed editing");
 
     ImGui::End();
 }
