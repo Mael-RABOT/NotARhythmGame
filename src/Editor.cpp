@@ -604,10 +604,11 @@ Editor::Editor()
       sortOrder(SortOrder::TIME),
       showSaveDialog(false),
       showLoadDialog(false),
+      showHelpWindow(false),
       chartTitle(""),
       chartArtist(""),
       speedOverrideEnabled(false),
-      playbackSpeed(1.0f),
+      playbackSpeed(0.5f),
       originalPlaybackSpeed(1.0f) {
 
     calculateGridSpacing();
@@ -663,10 +664,11 @@ Editor::Editor(Core::SoundManager* soundManager)
       sortOrder(SortOrder::TIME),
       showSaveDialog(false),
       showLoadDialog(false),
+      showHelpWindow(false),
       chartTitle(""),
       chartArtist(""),
       speedOverrideEnabled(false),
-      playbackSpeed(1.0f),
+      playbackSpeed(0.5f),
       originalPlaybackSpeed(1.0f) {
 
     calculateGridSpacing();
@@ -756,6 +758,105 @@ void Editor::handleKeyboardInput() {
         double zero = 0;
         currentPosition = zero;
         soundManager->seekTo("timeline_song", currentPosition);
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_S) && !ImGui::GetIO().KeyCtrl) {
+        speedOverrideEnabled = !speedOverrideEnabled;
+        if (soundManager && isSongLoaded) {
+            if (speedOverrideEnabled) {
+                originalPlaybackSpeed = soundManager->getCurrentPlaybackSpeed("timeline_song");
+                soundManager->setPlaybackSpeed("timeline_song", playbackSpeed);
+            } else {
+                soundManager->setPlaybackSpeed("timeline_song", originalPlaybackSpeed);
+            }
+        }
+    }
+
+    if (speedOverrideEnabled) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Equal) || ImGui::IsKeyPressed(ImGuiKey_KeypadAdd)) {
+            playbackSpeed = std::min(2.0f, playbackSpeed + 0.1f);
+            if (soundManager && isSongLoaded) {
+                soundManager->setPlaybackSpeed("timeline_song", playbackSpeed);
+            }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Minus) || ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract)) {
+            playbackSpeed = std::max(0.1f, playbackSpeed - 0.1f);
+            if (soundManager && isSongLoaded) {
+                soundManager->setPlaybackSpeed("timeline_song", playbackSpeed);
+            }
+        }
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_H) && ImGui::GetIO().KeyCtrl) {
+        showHelpWindow = !showHelpWindow;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_N) && ImGui::GetIO().KeyCtrl) {
+        showNotesList = !showNotesList;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_P) && ImGui::GetIO().KeyCtrl) {
+        showProperties = !showProperties;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_O) && ImGui::GetIO().KeyCtrl) {
+        showFileDialog = true;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_S) && ImGui::GetIO().KeyCtrl) {
+        if (isSongLoaded) {
+            showSaveDialog = true;
+        }
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_L) && ImGui::GetIO().KeyCtrl) {
+        showLoadDialog = true;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Delete) && selectedNoteId != -1) {
+        nodeManager.removeNote(selectedNoteId);
+        selectedNoteId = -1;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_C) && ImGui::GetIO().KeyCtrl) {
+        nodeManager.clear();
+        selectedNoteId = -1;
+        hoveredNoteId = -1;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_G)) {
+        showGrid = !showGrid;
+        calculateGridSpacing();
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_A)) {
+        enableAutoscroll = !enableAutoscroll;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_T)) {
+        snapToGrid = !snapToGrid;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_I)) {
+        showNoteIds = !showNoteIds;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_M)) {
+        showMilliseconds = !showMilliseconds;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_W)) {
+        showWaveform = !showWaveform;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_KeypadAdd) && ImGui::GetIO().KeyCtrl) {
+        zoomLevel = std::min(maxZoomLevel, zoomLevel * 1.2f);
+        float visible_duration = songDuration / zoomLevel;
+        float max_scroll = std::max(0.0f, static_cast<float>(songDuration - visible_duration));
+        scrollOffset = std::min(scrollOffset, max_scroll);
+        targetScrollOffset = scrollOffset;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract) && ImGui::GetIO().KeyCtrl) {
+        zoomLevel = std::max(minZoomLevel, zoomLevel / 1.2f);
+        float visible_duration = songDuration / zoomLevel;
+        float max_scroll = std::max(0.0f, static_cast<float>(songDuration - visible_duration));
+        scrollOffset = std::min(scrollOffset, max_scroll);
+        targetScrollOffset = scrollOffset;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_0) && ImGui::GetIO().KeyCtrl) {
+        zoomLevel = 1.0f;
+        scrollOffset = 0.0f;
+        targetScrollOffset = 0.0f;
     }
 
     float seekAmount = 5.0f;
@@ -1046,6 +1147,29 @@ void Editor::render() {
         }
     }
 
+    ImGui::EndGroup();
+
+    ImGui::Spacing();
+    ImGui::BeginGroup();
+
+    ImGui::Text("Speed Control");
+    ImGui::Separator();
+
+    if (ImGui::Button(speedOverrideEnabled ? "Speed Override: ON" : "Speed Override: OFF", ImVec2(150, 25))) {
+        speedOverrideEnabled = !speedOverrideEnabled;
+        if (soundManager && isSongLoaded) {
+            if (speedOverrideEnabled) {
+                originalPlaybackSpeed = soundManager->getCurrentPlaybackSpeed("timeline_song");
+                soundManager->setPlaybackSpeed("timeline_song", playbackSpeed);
+            } else {
+                soundManager->setPlaybackSpeed("timeline_song", originalPlaybackSpeed);
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    ImGui::Text("(S to toggle)");
+
     if (speedOverrideEnabled) {
         float currentSpeed = soundManager ? soundManager->getCurrentPlaybackSpeed("timeline_song") : playbackSpeed;
         ImGui::Text("Playback Speed: %.2fx", currentSpeed);
@@ -1054,6 +1178,7 @@ void Editor::render() {
                 soundManager->setPlaybackSpeed("timeline_song", playbackSpeed);
             }
         }
+        ImGui::Text("(+/- keys to adjust)");
     } else {
         ImGui::BeginDisabled();
         ImGui::Text("Playback Speed: %.2fx", playbackSpeed);
@@ -1069,14 +1194,14 @@ void Editor::render() {
     ImGui::Text("Level Editor");
     ImGui::Separator();
 
-    if (ImGui::Button("Clear All Notes", ImVec2(120, 25))) {
+    if (ImGui::Button("Clear All Notes (Ctrl+C)", ImVec2(120, 25))) {
         nodeManager.clear();
         selectedNoteId = -1;
         hoveredNoteId = -1;
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Save Chart", ImVec2(100, 25))) {
+    if (ImGui::Button("Save Chart (Ctrl+S)", ImVec2(100, 25))) {
         if (isSongLoaded) {
             showSaveDialog = true;
         } else {
@@ -1085,35 +1210,40 @@ void Editor::render() {
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Load Chart", ImVec2(100, 25))) {
+    if (ImGui::Button("Load Chart (Ctrl+L)", ImVec2(100, 25))) {
         showLoadDialog = true;
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Browse Charts", ImVec2(100, 25))) {
+    if (ImGui::Button("Browse Charts (Ctrl+O)", ImVec2(100, 25))) {
         showFileDialog = true;
     }
 
     ImGui::SameLine();
     if (selectedNoteId != -1) {
-        if (ImGui::Button("Delete Note", ImVec2(100, 25))) {
+        if (ImGui::Button("Delete Note (Del)", ImVec2(100, 25))) {
             nodeManager.removeNote(selectedNoteId);
             selectedNoteId = -1;
         }
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button("Delete Note", ImVec2(100, 25));
+        ImGui::Button("Delete Note (Del)", ImVec2(100, 25));
         ImGui::EndDisabled();
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Notes List", ImVec2(100, 25))) {
+    if (ImGui::Button("Notes List (Ctrl+N)", ImVec2(100, 25))) {
         showNotesList = !showNotesList;
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Properties", ImVec2(100, 25))) {
+    if (ImGui::Button("Properties (Ctrl+P)", ImVec2(100, 25))) {
         showProperties = !showProperties;
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Help (Ctrl+H)", ImVec2(100, 25))) {
+        showHelpWindow = !showHelpWindow;
     }
 
     ImGui::EndGroup();
@@ -1124,24 +1254,24 @@ void Editor::render() {
     ImGui::Text("Timeline Configuration");
     ImGui::Separator();
 
-    if (ImGui::Checkbox("Show Grid", &showGrid)) {
+    if (ImGui::Checkbox("Show Grid (G)", &showGrid)) {
         calculateGridSpacing();
     }
 
     ImGui::SameLine();
-    ImGui::Checkbox("Auto-scroll", &enableAutoscroll);
+    ImGui::Checkbox("Auto-scroll (A)", &enableAutoscroll);
 
     ImGui::SameLine();
-    ImGui::Checkbox("Snap to Grid", &snapToGrid);
+    ImGui::Checkbox("Snap to Grid (T)", &snapToGrid);
 
     ImGui::SameLine();
-    ImGui::Checkbox("Show Note IDs", &showNoteIds);
+    ImGui::Checkbox("Show Note IDs (I)", &showNoteIds);
 
     ImGui::SameLine();
-    ImGui::Checkbox("Show milliseconds", &showMilliseconds);
+    ImGui::Checkbox("Show milliseconds (M)", &showMilliseconds);
 
     ImGui::SameLine();
-    ImGui::Checkbox("Show Waveform", &showWaveform);
+    ImGui::Checkbox("Show Waveform (W)", &showWaveform);
 
     ImGui::SameLine();
     if (isSongLoaded && !isAnalyzing && !waveformLoaded) {
@@ -1186,7 +1316,7 @@ void Editor::render() {
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Reset Zoom", ImVec2(80, 20))) {
+    if (ImGui::Button("Reset Zoom (Ctrl+0)", ImVec2(80, 20))) {
         zoomLevel = 1.0f;
         scrollOffset = 0.0f;
         targetScrollOffset = 0.0f;
@@ -1553,6 +1683,8 @@ void Editor::render() {
     drawNotesList();
 
     drawPropertiesPanel();
+
+    drawHelpWindow();
 }
 
 void Editor::refreshFileList() {
@@ -2257,6 +2389,76 @@ void Editor::drawWaveform() {
         IM_COL32(255, 255, 255, 30),
         1.0f
     );
+}
+
+void Editor::drawHelpWindow() {
+    if (!showHelpWindow) return;
+
+    ImGui::Begin("Keyboard Shortcuts & Help", &showHelpWindow, ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "PLAYBACK CONTROLS");
+    ImGui::Separator();
+    ImGui::Text("Space - Play/Pause");
+    ImGui::Text("Enter - Jump to beginning");
+    ImGui::Text("Left/Right Arrow - Seek backward/forward");
+    ImGui::Text("S - Toggle speed override");
+    ImGui::Text("+/- (when speed override enabled) - Adjust speed");
+
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "NOTE PLACEMENT");
+    ImGui::Separator();
+    ImGui::Text("F - Place tap note on top lane");
+    ImGui::Text("Shift+F - Place hold note on top lane");
+    ImGui::Text("J - Place tap note on bottom lane");
+    ImGui::Text("Shift+J - Place hold note on bottom lane");
+    ImGui::Text("Delete - Delete selected note");
+    ImGui::Text("Ctrl+C - Clear all notes");
+
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "TIMELINE CONTROLS");
+    ImGui::Separator();
+    ImGui::Text("G - Toggle grid");
+    ImGui::Text("A - Toggle auto-scroll");
+    ImGui::Text("T - Toggle snap to grid");
+    ImGui::Text("I - Toggle note IDs");
+    ImGui::Text("M - Toggle milliseconds");
+    ImGui::Text("W - Toggle waveform");
+    ImGui::Text("Ctrl++/Ctrl+- - Zoom in/out");
+    ImGui::Text("Ctrl+0 - Reset zoom");
+
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "WINDOW TOGGLES");
+    ImGui::Separator();
+    ImGui::Text("Ctrl+H - Toggle this help window");
+    ImGui::Text("Ctrl+N - Toggle notes list");
+    ImGui::Text("Ctrl+P - Toggle properties panel");
+
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "FILE OPERATIONS");
+    ImGui::Separator();
+    ImGui::Text("Ctrl+O - Open file browser");
+    ImGui::Text("Ctrl+S - Save chart");
+    ImGui::Text("Ctrl+L - Load chart");
+
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "MOUSE CONTROLS");
+    ImGui::Separator();
+    ImGui::Text("Left click - Select note");
+    ImGui::Text("Right click - Place note at cursor position");
+    ImGui::Text("Mouse wheel - Zoom timeline");
+    ImGui::Text("Drag - Pan timeline");
+    ImGui::Text("Double click note - Jump to note position");
+
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "TIPS");
+    ImGui::Separator();
+    ImGui::Text("• Use snap to grid for precise note placement");
+    ImGui::Text("• Hold Shift while placing notes to create hold notes");
+    ImGui::Text("• Speed override affects playback speed without changing pitch");
+    ImGui::Text("• Use auto-scroll to keep the cursor in view while playing");
+    ImGui::Text("• Zoom controls help with detailed editing");
+
+    ImGui::End();
 }
 
 } // Windows
