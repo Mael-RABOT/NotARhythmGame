@@ -28,6 +28,8 @@ My focus is currently on the creation of demo charts. Has level design is kinda 
 
 ## Roadmap
 
+Here are some of next steps I aim to achieve:
+
 - [x] Create the Core classes
 - [x] Add the Editor
 - [x] Add charts saving version 1
@@ -36,8 +38,10 @@ My focus is currently on the creation of demo charts. Has level design is kinda 
 - [x] Update charts to version 2 (HOLD notes)
 - [ ] Create demo charts
 - [ ] Add more notes types (obstacle, disapparing, etc.)
-- [ ] Add a full keyboard navigation support
+- [x] Add a full keyboard navigation support
 - [ ] Cleanup the UI & enhance the UX
+
+For a more in depth view of the roadmap, please refere to the [issues](https://github.com/Mael-RABOT/NotARhythmGame/issues) page.
 
 ## Installation
 
