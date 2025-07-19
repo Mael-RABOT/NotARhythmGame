@@ -611,7 +611,13 @@ Editor::Editor()
       chartArtist(""),
       speedOverrideEnabled(false),
       playbackSpeed(0.5f),
-      originalPlaybackSpeed(1.0f) {
+      originalPlaybackSpeed(1.0f),
+      showBpmFinder(false),
+      bpmFinderActive(false),
+      bpmFinderStartTime(0.0),
+      lastTapTime(0.0),
+      minTapsForBpm(4),
+      maxTapsForBpm(16) {
 
     calculateGridSpacing();
 
@@ -674,7 +680,13 @@ Editor::Editor(Core::SoundManager* soundManager)
       chartArtist(""),
       speedOverrideEnabled(false),
       playbackSpeed(0.5f),
-      originalPlaybackSpeed(1.0f) {
+      originalPlaybackSpeed(1.0f),
+      showBpmFinder(false),
+      bpmFinderActive(false),
+      bpmFinderStartTime(0.0),
+      lastTapTime(0.0),
+      minTapsForBpm(4),
+      maxTapsForBpm(16) {
 
     calculateGridSpacing();
 
@@ -769,6 +781,21 @@ void Editor::handleKeyboardInput() {
         ImGui::IsPopupOpen("Load Chart") || ImGui::IsPopupOpen("No Song Loaded")) return;
 
     if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+        if (showBpmFinder && bpmFinderActive) {
+            double currentTime = ImGui::GetTime() - bpmFinderStartTime;
+            bpmTapTimes.push_back(currentTime);
+            lastTapTime = currentTime;
+            return;
+        } else if (showBpmFinder && !bpmFinderActive) {
+            bpmFinderActive = true;
+            bpmFinderStartTime = ImGui::GetTime();
+            if (soundManager && isSongLoaded && !isPlaying) {
+                soundManager->resumeSound("timeline_song");
+                isPlaying = true;
+            }
+            return;
+        }
+
         if (isPlaying) {
             soundManager->pauseSound("timeline_song");
             isPlaying = false;
@@ -823,6 +850,9 @@ void Editor::handleKeyboardInput() {
     }
     if (ImGui::IsKeyPressed(ImGuiKey_P) && ImGui::GetIO().KeyCtrl) {
         showProperties = !showProperties;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_B) && ImGui::GetIO().KeyCtrl) {
+        showBpmFinder = true;
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_O) && ImGui::GetIO().KeyCtrl) {
@@ -1168,6 +1198,7 @@ void Editor::render() {
     drawLoadChartPopup();
     drawNoSongLoadedPopup();
     drawMultiNoteDialog();
+    drawBpmFinder();
     drawNotesList();
     drawPropertiesPanel();
     drawHelpWindow();
@@ -1410,6 +1441,11 @@ void Editor::drawControlsWindow() {
             }
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Grid: %.2fs", gridSpacing);
+
+            ImGui::SameLine();
+            if (ImGui::Button("BPM Finder", ImVec2(100, 20))) {
+                showBpmFinder = true;
+            }
 
             if (showSubGrid) {
                 ImGui::Text("Sub-Grid Divisions:");
@@ -2585,6 +2621,7 @@ void Editor::drawHelpWindow() {
     ImGui::Text("Ctrl+N - Toggle notes list");
     ImGui::Text("Ctrl+M - Open multi-note placer");
     ImGui::Text("Ctrl+P - Toggle properties panel");
+    ImGui::Text("Ctrl+B - Open BPM finder");
 
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "FILE OPERATIONS");
@@ -2750,6 +2787,191 @@ void Editor::drawMultiNoteDialog() {
             selectedLane = Core::Lane::TOP;
             selectedType = Core::NoteType::TAP;
             holdDuration = 0.5f;
+        }
+
+        ImGui::End();
+    }
+}
+
+void Editor::drawBpmFinder() {
+    if (!showBpmFinder) return;
+
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::Begin("BPM Finder", &showBpmFinder, ImGuiWindowFlags_Modal | ImGuiWindowFlags_NoCollapse)) {
+
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Tap to Find BPM");
+        ImGui::Separator();
+
+        ImGui::Text("Press SPACE or click the button below to tap in rhythm.");
+        ImGui::Text("Tap at least %d times for accurate BPM detection.", minTapsForBpm);
+        ImGui::Text("Maximum %d taps will be used for calculation.", maxTapsForBpm);
+
+        ImGui::Spacing();
+
+        if (!bpmFinderActive) {
+            if (ImGui::Button("Start Tapping", ImVec2(200, 60))) {
+                bpmFinderActive = true;
+                bpmFinderStartTime = ImGui::GetTime();
+                bpmTapTimes.clear();
+                bpmTapTimes.push_back(0.0);
+                lastTapTime = 0.0;
+
+                if (soundManager && isSongLoaded && !isPlaying) {
+                    soundManager->resumeSound("timeline_song");
+                    isPlaying = true;
+                }
+            }
+        } else {
+            if (ImGui::Button("TAP!", ImVec2(200, 60))) {
+                double currentTime = ImGui::GetTime() - bpmFinderStartTime;
+                bpmTapTimes.push_back(currentTime);
+                lastTapTime = currentTime;
+            }
+        }
+
+        if (bpmFinderActive) {
+            ImGui::SameLine();
+            if (ImGui::Button("Reset", ImVec2(100, 60))) {
+                bpmFinderActive = false;
+                bpmTapTimes.clear();
+
+                if (soundManager && isSongLoaded && isPlaying) {
+                    soundManager->pauseSound("timeline_song");
+                    isPlaying = false;
+                }
+            }
+
+            ImGui::Spacing();
+
+            ImGui::Text("Taps: %zu", bpmTapTimes.size());
+            if (bpmTapTimes.size() > 1) {
+                ImGui::Text("Last interval: %.3fs", lastTapTime - bpmTapTimes[bpmTapTimes.size() - 2]);
+            }
+
+            if (static_cast<int>(bpmTapTimes.size()) >= minTapsForBpm) {
+                std::vector<double> intervals;
+                for (size_t i = 1; i < bpmTapTimes.size(); ++i) {
+                    intervals.push_back(bpmTapTimes[i] - bpmTapTimes[i - 1]);
+                }
+
+                double totalInterval = 0.0;
+                for (double interval : intervals) {
+                    totalInterval += interval;
+                }
+                double avgInterval = totalInterval / intervals.size();
+
+                float calculatedBpm = 60.0f / static_cast<float>(avgInterval);
+
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Calculated BPM: %.1f", calculatedBpm);
+
+                std::vector<float> standardBpms = {
+                    60.0f, 75.0f, 80.0f, 85.0f, 90.0f, 95.0f, 100.0f, 105.0f, 110.0f, 115.0f, 120.0f, 125.0f, 130.0f, 135.0f, 140.0f, 145.0f, 150.0f, 155.0f, 160.0f, 165.0f, 170.0f, 175.0f, 180.0f, 185.0f, 190.0f, 195.0f, 200.0f
+                };
+
+                float nearestStandard = standardBpms[0];
+                float minDifference = std::abs(calculatedBpm - standardBpms[0]);
+
+                for (float standardBpm : standardBpms) {
+                    float difference = std::abs(calculatedBpm - standardBpm);
+                    if (difference < minDifference) {
+                        minDifference = difference;
+                        nearestStandard = standardBpm;
+                    }
+                }
+
+                if (minDifference <= 5.0f) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Nearest standard BPM: %.0f (common value)", nearestStandard);
+
+                    ImGui::SameLine();
+                    if (ImGui::Button("Apply Standard", ImVec2(120, 20))) {
+                        bpm = nearestStandard;
+                        calculateGridSpacing();
+                        showBpmFinder = false;
+                        bpmFinderActive = false;
+                        bpmTapTimes.clear();
+
+                        if (soundManager && isSongLoaded && isPlaying) {
+                            soundManager->pauseSound("timeline_song");
+                            isPlaying = false;
+                        }
+                    }
+                }
+
+                ImGui::Text("Common variations:");
+                ImGui::Text("  Half time: %.1f BPM", calculatedBpm * 0.5f);
+                ImGui::Text("  Double time: %.1f BPM", calculatedBpm * 2.0f);
+
+                if (ImGui::CollapsingHeader("Tap Intervals")) {
+                    for (size_t i = 0; i < intervals.size(); ++i) {
+                        ImGui::Text("Interval %zu: %.3fs", i + 1, intervals[i]);
+                    }
+                }
+
+                ImGui::Spacing();
+
+                if (ImGui::Button("Apply This BPM", ImVec2(150, 30))) {
+                    bpm = calculatedBpm;
+                    calculateGridSpacing();
+                    showBpmFinder = false;
+                    bpmFinderActive = false;
+                    bpmTapTimes.clear();
+
+                    if (soundManager && isSongLoaded && isPlaying) {
+                        soundManager->pauseSound("timeline_song");
+                        isPlaying = false;
+                    }
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Apply Half Time", ImVec2(150, 30))) {
+                    bpm = calculatedBpm * 0.5f;
+                    calculateGridSpacing();
+                    showBpmFinder = false;
+                    bpmFinderActive = false;
+                    bpmTapTimes.clear();
+
+                    if (soundManager && isSongLoaded && isPlaying) {
+                        soundManager->pauseSound("timeline_song");
+                        isPlaying = false;
+                    }
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Apply Double Time", ImVec2(150, 30))) {
+                    bpm = calculatedBpm * 2.0f;
+                    calculateGridSpacing();
+                    showBpmFinder = false;
+                    bpmFinderActive = false;
+                    bpmTapTimes.clear();
+
+                    if (soundManager && isSongLoaded && isPlaying) {
+                        soundManager->pauseSound("timeline_song");
+                        isPlaying = false;
+                    }
+                }
+            } else if (bpmTapTimes.size() > 1) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Keep tapping! Need %zu more taps for calculation.", minTapsForBpm - bpmTapTimes.size());
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+
+        ImGui::Spacing();
+
+        if (ImGui::Button("Close", ImVec2(120, 30))) {
+            showBpmFinder = false;
+            bpmFinderActive = false;
+            bpmTapTimes.clear();
+
+            if (soundManager && isSongLoaded && isPlaying) {
+                soundManager->pauseSound("timeline_song");
+                isPlaying = false;
+            }
         }
 
         ImGui::End();

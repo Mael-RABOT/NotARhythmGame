@@ -117,6 +117,14 @@ namespace Windows {
             float playbackSpeed;
             float originalPlaybackSpeed;
 
+            bool showBpmFinder;
+            bool bpmFinderActive;
+            std::vector<double> bpmTapTimes;
+            double bpmFinderStartTime;
+            double lastTapTime;
+            int minTapsForBpm;
+            int maxTapsForBpm;
+
             void loadSong(const std::string& filepath);
             void updatePlayback();
             void handleKeyboardInput();
@@ -131,6 +139,7 @@ namespace Windows {
             void drawLoadChartPopup();
             void drawNoSongLoadedPopup();
             void drawMultiNoteDialog();
+            void drawBpmFinder();
             void calculateGridSpacing();
             float getSnapSpacing() const;
             bool shouldSnap() const;
