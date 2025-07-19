@@ -84,7 +84,7 @@ private:
     AudioStats calculateAudioStats(const std::vector<double>& channelData, double sampleRate);
 
 public:
-    AudioAnalyzer(size_t maxFileSize = 50 * 1024 * 1024);
+    AudioAnalyzer(size_t maxFileSize = 500 * 1024 * 1024);
     void setProgressCallback(std::function<void(const AnalysisProgress&)> callback);
     AudioWaveform analyzeAudio(const std::string& filename);
 };

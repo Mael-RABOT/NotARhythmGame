@@ -9,7 +9,11 @@ void AudioAnalyzer::setProgressCallback(std::function<void(const AnalysisProgres
 
 void AudioAnalyzer::updateProgress(double progress, const std::string& stage) {
     if (progressCallback) {
-        progressCallback({progress, stage});
+        try {
+            progressCallback({progress, stage});
+        } catch (const std::exception& e) {
+            std::cerr << "Progress callback error: " << e.what() << std::endl;
+        }
     }
 }
 
@@ -22,20 +26,55 @@ std::vector<double> AudioAnalyzer::loadAudioFile(const std::string& filename, do
         throw std::runtime_error("Failed to open audio file: " + std::string(sf_strerror(nullptr)));
     }
 
+    if (sfInfo.frames <= 0 || sfInfo.samplerate <= 0 || sfInfo.channels <= 0) {
+        sf_close(file);
+        throw std::runtime_error("Invalid audio file parameters");
+    }
+
+    size_t expectedSize = static_cast<size_t>(sfInfo.frames) * sfInfo.channels;
+    size_t memoryRequired = expectedSize * sizeof(double);
+    if (memoryRequired > maxFileSize) {
+        sf_close(file);
+        throw std::runtime_error("Audio file too large for analysis (requires " +
+                                std::to_string(memoryRequired / (1024 * 1024)) +
+                                "MB, max allowed: " + std::to_string(maxFileSize / (1024 * 1024)) + "MB)");
+    }
+
     sampleRate = sfInfo.samplerate;
     duration = static_cast<double>(sfInfo.frames) / sampleRate;
 
-    std::vector<double> audioData(sfInfo.frames * sfInfo.channels);
-    sf_count_t samplesRead = sf_readf_double(file, audioData.data(), sfInfo.frames);
+    std::vector<double> audioData;
+    try {
+        audioData.resize(sfInfo.frames * sfInfo.channels);
+    } catch (const std::bad_alloc& e) {
+        sf_close(file);
+        throw std::runtime_error("Failed to allocate memory for audio data: " + std::string(e.what()));
+    }
 
-    if (samplesRead != sfInfo.frames) {
+    const sf_count_t chunkSize = 1000000;
+    sf_count_t totalSamplesRead = 0;
+
+    for (sf_count_t offset = 0; offset < sfInfo.frames; offset += chunkSize) {
+        sf_count_t samplesToRead = std::min(chunkSize, sfInfo.frames - offset);
+        sf_count_t samplesRead = sf_readf_double(file,
+            audioData.data() + (offset * sfInfo.channels),
+            samplesToRead);
+
+        if (samplesRead != samplesToRead) {
+            sf_close(file);
+            throw std::runtime_error("Failed to read complete audio file");
+        }
+
+        totalSamplesRead += samplesRead;
+    }
+
+    if (totalSamplesRead != sfInfo.frames) {
         sf_close(file);
         throw std::runtime_error("Failed to read complete audio file");
     }
 
     sf_close(file);
 
-    // Convert to mono if stereo
     if (sfInfo.channels == 2) {
         std::vector<double> monoData(sfInfo.frames);
         for (int i = 0; i < sfInfo.frames; i++) {
@@ -55,7 +94,6 @@ WaveformLevel AudioAnalyzer::generateWaveformLevel(const std::vector<double>& ch
 
     int segmentCount = static_cast<int>(std::ceil(static_cast<double>(channelData.size()) / samplesPerPixel));
 
-    // Calculate global statistics for normalization
     double globalMax = 0.0;
     double globalSum = 0.0;
     double globalBassSum = 0.0;
@@ -88,6 +126,12 @@ WaveformLevel AudioAnalyzer::generateWaveformLevel(const std::vector<double>& ch
         int startSample = i * samplesPerPixel;
         int endSample = std::min(startSample + samplesPerPixel, static_cast<int>(channelData.size()));
 
+        if (startSample >= static_cast<int>(channelData.size()) || startSample >= endSample) {
+            peaks.push_back(0.0);
+            rms.push_back(0.0);
+            continue;
+        }
+
         double maxPeak = -std::numeric_limits<double>::infinity();
         double minPeak = std::numeric_limits<double>::infinity();
         double sumSquares = 0.0;
@@ -98,7 +142,7 @@ WaveformLevel AudioAnalyzer::generateWaveformLevel(const std::vector<double>& ch
         int bassCount = 0;
         int rhythmCount = 0;
 
-        for (int j = startSample; j < endSample; j++) {
+        for (int j = startSample; j < endSample && j < static_cast<int>(channelData.size()); j++) {
             double sample = channelData[j];
             maxPeak = std::max(maxPeak, sample);
             minPeak = std::min(minPeak, sample);
@@ -169,6 +213,10 @@ WaveformLevel AudioAnalyzer::generateWaveformLevel(const std::vector<double>& ch
             for (double& peak : peaks) {
                 peak = (peak - minPeak) / range;
             }
+        } else {
+            for (double& peak : peaks) {
+                peak = 0.5;
+            }
         }
     }
 
@@ -184,6 +232,10 @@ std::vector<double> AudioAnalyzer::analyzeFrequencyContent(const std::vector<dou
 
     for (int i = 0; i < maxWindows; i++) {
         int startIndex = i * hopSize;
+
+        if (startIndex + windowSize > static_cast<int>(channelData.size())) {
+            break;
+        }
 
         double spectralSum = 0.0;
         double magnitudeSum = 0.0;
@@ -369,13 +421,13 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
                       std::to_string(static_cast<int>(duration)) + "s duration)");
         updateProgress(35, "Generating waveform levels...");
 
-        // Create multiple resolution levels
-        std::vector<std::pair<std::string, int>> resolutions = {
-            {"overview", std::max(1, totalSamples / 1000)},
-            {"low", std::max(1, totalSamples / 5000)},
-            {"medium", std::max(1, totalSamples / 20000)},
-            {"high", std::max(1, totalSamples / 100000)}
-        };
+    int maxSamplesPerPixel = std::min(100000, totalSamples / 1000);
+    std::vector<std::pair<std::string, int>> resolutions = {
+        {"overview", std::max(1, totalSamples / 1000)},
+        {"low", std::max(1, std::min(totalSamples / 5000, maxSamplesPerPixel / 5))},
+        {"medium", std::max(1, std::min(totalSamples / 20000, maxSamplesPerPixel / 20))},
+        {"high", std::max(1, std::min(totalSamples / 100000, maxSamplesPerPixel / 100))}
+    };
 
         std::map<std::string, WaveformLevel> waveformLevels;
 

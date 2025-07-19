@@ -572,7 +572,7 @@ Editor::Editor()
       isPlaying(false),
       currentPosition(0.0),
       songDuration(0.0),
-      audioAnalyzer(std::make_unique<AudioAnalyzer>()),
+      audioAnalyzer(std::make_unique<AudioAnalyzer>(500 * 1024 * 1024)),
       showWaveform(true),
       waveformLoaded(false),
       isAnalyzing(false),
@@ -641,7 +641,7 @@ Editor::Editor(Core::SoundManager* soundManager)
       isPlaying(false),
       currentPosition(0.0),
       songDuration(0.0),
-      audioAnalyzer(std::make_unique<AudioAnalyzer>()),
+      audioAnalyzer(std::make_unique<AudioAnalyzer>(500 * 1024 * 1024)),
       showWaveform(true),
       waveformLoaded(false),
       isAnalyzing(false),
@@ -2451,10 +2451,13 @@ void Editor::analyzeAudioFile(const std::string& filepath) {
 
     std::thread analysisThread([this, filepath]() {
         try {
-            waveformData = audioAnalyzer->analyzeAudio(filepath);
+            AudioWaveform localWaveformData = audioAnalyzer->analyzeAudio(filepath);
+
+            waveformData = std::move(localWaveformData);
             waveformLoaded = true;
         } catch (const std::exception& e) {
             std::cerr << "Waveform analysis failed: " << e.what() << std::endl;
+            analysisProgress = "Analysis failed: " + std::string(e.what());
         }
         isAnalyzing = false;
     });
@@ -2513,6 +2516,10 @@ void Editor::drawWaveform() {
         waveform = &waveformData.levels[resolutionLevel].peaks;
     }
 
+    if (waveform->empty() || waveformData.duration <= 0.0) {
+        return;
+    }
+
     double timePerSample = waveformData.duration / waveform->size();
     size_t startIndex = static_cast<size_t>(visible_start / timePerSample);
     size_t endIndex = static_cast<size_t>((visible_start + visible_duration) / timePerSample);
@@ -2520,7 +2527,7 @@ void Editor::drawWaveform() {
     startIndex = std::min(startIndex, waveform->size() - 1);
     endIndex = std::min(endIndex, waveform->size());
 
-    if (startIndex >= endIndex) return;
+    if (startIndex >= endIndex || startIndex >= waveform->size()) return;
 
     float waveformHeight = timelineHeight * 0.4f;
     float waveformY = timeline_y + (timelineHeight - waveformHeight) * 0.5f;
