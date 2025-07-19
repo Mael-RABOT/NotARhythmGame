@@ -42,6 +42,12 @@ namespace Windows {
         ID = 2,
     };
 
+    enum SnapMode {
+        NO_SNAP = 0,
+        SNAP_TO_GRID = 1,
+        SNAP_TO_GRID_AND_SUBGRID = 2,
+    };
+
     class Editor {
         private:
             // Audio management
@@ -65,6 +71,8 @@ namespace Windows {
             // Timeline configuration
             float bpm;
             bool showGrid;
+            bool showSubGrid;
+            int subGridDivisions;
             bool enableAutoscroll;
             float markerInterval;
             float gridSpacing; // in seconds, calculated from BPM
@@ -91,7 +99,7 @@ namespace Windows {
 
             bool showNotesList;
             bool showProperties;
-            bool snapToGrid;
+            SnapMode snapMode;
             bool showNoteIds;
             bool showMilliseconds;
             float noteRadius;
@@ -115,7 +123,15 @@ namespace Windows {
             void drawPlaybackCursor();
             void drawTimelineRuler();
             void drawWaveform();
+            void drawControlsWindow();
+            void drawTimelineWindow();
+            void drawFileBrowserPopup();
+            void drawSaveChartPopup();
+            void drawLoadChartPopup();
+            void drawNoSongLoadedPopup();
             void calculateGridSpacing();
+            float getSnapSpacing() const;
+            bool shouldSnap() const;
             void updateAutoscroll();
             void refreshFileList();
             void navigateToDirectory(const std::string& dirName);
