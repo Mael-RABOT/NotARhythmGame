@@ -109,6 +109,7 @@ namespace Windows {
             bool showSaveDialog;
             bool showLoadDialog;
             bool showHelpWindow;
+            bool showMultiNoteDialog;
             std::string chartTitle;
             std::string chartArtist;
 
@@ -129,6 +130,7 @@ namespace Windows {
             void drawSaveChartPopup();
             void drawLoadChartPopup();
             void drawNoSongLoadedPopup();
+            void drawMultiNoteDialog();
             void calculateGridSpacing();
             float getSnapSpacing() const;
             bool shouldSnap() const;

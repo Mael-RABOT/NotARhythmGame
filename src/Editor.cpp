@@ -606,6 +606,7 @@ Editor::Editor()
       showSaveDialog(false),
       showLoadDialog(false),
       showHelpWindow(false),
+      showMultiNoteDialog(false),
       chartTitle(""),
       chartArtist(""),
       speedOverrideEnabled(false),
@@ -668,6 +669,7 @@ Editor::Editor(Core::SoundManager* soundManager)
       showSaveDialog(false),
       showLoadDialog(false),
       showHelpWindow(false),
+      showMultiNoteDialog(false),
       chartTitle(""),
       chartArtist(""),
       speedOverrideEnabled(false),
@@ -814,6 +816,10 @@ void Editor::handleKeyboardInput() {
     }
     if (ImGui::IsKeyPressed(ImGuiKey_N) && ImGui::GetIO().KeyCtrl) {
         showNotesList = !showNotesList;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_M) && ImGui::GetIO().KeyCtrl) {
+        showMultiNoteDialog = true;
     }
     if (ImGui::IsKeyPressed(ImGuiKey_P) && ImGui::GetIO().KeyCtrl) {
         showProperties = !showProperties;
@@ -1161,6 +1167,7 @@ void Editor::render() {
     drawSaveChartPopup();
     drawLoadChartPopup();
     drawNoSongLoadedPopup();
+    drawMultiNoteDialog();
     drawNotesList();
     drawPropertiesPanel();
     drawHelpWindow();
@@ -1314,6 +1321,11 @@ void Editor::drawControlsWindow() {
             ImGui::SameLine();
             if (ImGui::Button("Help", ImVec2(120, 30))) {
                 showHelpWindow = !showHelpWindow;
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Multi-Note", ImVec2(120, 30))) {
+                showMultiNoteDialog = true;
             }
 
             ImGui::EndTabItem();
@@ -2571,6 +2583,7 @@ void Editor::drawHelpWindow() {
     ImGui::Separator();
     ImGui::Text("Ctrl+H - Toggle this help window");
     ImGui::Text("Ctrl+N - Toggle notes list");
+    ImGui::Text("Ctrl+M - Open multi-note placer");
     ImGui::Text("Ctrl+P - Toggle properties panel");
 
     ImGui::Spacing();
@@ -2600,6 +2613,147 @@ void Editor::drawHelpWindow() {
     ImGui::Text("- Zoom controls help with detailed editing");
 
     ImGui::End();
+}
+
+void Editor::drawMultiNoteDialog() {
+    if (!showMultiNoteDialog) return;
+
+    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::Begin("Multi-Note Placer", &showMultiNoteDialog, ImGuiWindowFlags_Modal | ImGuiWindowFlags_NoCollapse)) {
+
+        static float startTime = 0.0f;
+        static int noteCount = 5;
+        static float noteSpacing = 0.5f;
+        static Core::Lane selectedLane = Core::Lane::TOP;
+        static Core::NoteType selectedType = Core::NoteType::TAP;
+
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Multi-Note Configuration");
+        ImGui::Separator();
+
+        ImGui::Text("Start Time (seconds):");
+        if (ImGui::InputFloat("##startTime", &startTime, 0.1f, 1.0f, "%.2f", ImGuiInputTextFlags_CharsDecimal)) {
+            startTime = std::max(0.0f, startTime);
+            if (isSongLoaded) {
+                startTime = std::min(startTime, static_cast<float>(songDuration));
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Use Current", ImVec2(80, 20))) {
+            startTime = static_cast<float>(currentPosition);
+        }
+
+        ImGui::Text("Number of Notes:");
+        if (ImGui::SliderInt("##noteCount", &noteCount, 1, 50, "%d")) {
+            noteCount = std::max(1, std::min(50, noteCount));
+        }
+
+        ImGui::Text("Spacing Between Notes (seconds):");
+        if (ImGui::InputFloat("##noteSpacing", &noteSpacing, 0.1f, 0.5f, "%.2f", ImGuiInputTextFlags_CharsDecimal)) {
+            noteSpacing = std::max(0.1f, noteSpacing);
+        }
+
+        ImGui::Spacing();
+
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Note Settings");
+        ImGui::Separator();
+
+        ImGui::Text("Lane:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Top", selectedLane == Core::Lane::TOP)) {
+            selectedLane = Core::Lane::TOP;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Bottom", selectedLane == Core::Lane::BOTTOM)) {
+            selectedLane = Core::Lane::BOTTOM;
+        }
+
+        ImGui::Text("Note Type:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Tap", selectedType == Core::NoteType::TAP)) {
+            selectedType = Core::NoteType::TAP;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Hold", selectedType == Core::NoteType::HOLD)) {
+            selectedType = Core::NoteType::HOLD;
+        }
+
+        static float holdDuration = 0.5f;
+        if (selectedType == Core::NoteType::HOLD) {
+            ImGui::Text("Hold Duration (seconds):");
+            if (ImGui::InputFloat("##holdDuration", &holdDuration, 0.1f, 0.5f, "%.2f", ImGuiInputTextFlags_CharsDecimal)) {
+                holdDuration = std::max(0.1f, holdDuration);
+            }
+        }
+
+        ImGui::Spacing();
+
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Preview");
+        ImGui::Separator();
+
+        float totalDuration;
+        if (selectedType == Core::NoteType::TAP) {
+            totalDuration = startTime + (noteCount - 1) * noteSpacing;
+        } else {
+            totalDuration = startTime + (noteCount - 1) * noteSpacing + (noteCount - 1) * holdDuration + holdDuration;
+        }
+
+        ImGui::Text("Notes will be placed from %.2fs to %.2fs", startTime, totalDuration);
+        ImGui::Text("Total duration: %.2fs", totalDuration - startTime);
+
+        if (isSongLoaded && totalDuration > songDuration) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Warning: Some notes will be placed beyond song duration!");
+        }
+
+        ImGui::Spacing();
+
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Actions");
+        ImGui::Separator();
+
+        if (ImGui::Button("Place Notes", ImVec2(120, 30))) {
+            for (int i = 0; i < noteCount; ++i) {
+                float noteTime;
+
+                if (selectedType == Core::NoteType::TAP) {
+                    noteTime = startTime + (i * noteSpacing);
+                    nodeManager.addNote(static_cast<int>(selectedLane), noteTime);
+                } else {
+                    if (i == 0) {
+                        noteTime = startTime;
+                    } else {
+                        noteTime = startTime + (i * noteSpacing) + (i * holdDuration);
+                    }
+                    float endTime = noteTime + holdDuration;
+                    nodeManager.addHoldNote(static_cast<int>(selectedLane), noteTime, endTime);
+                }
+            }
+
+            showMultiNoteDialog = false;
+
+            startTime = 0.0f;
+            noteCount = 5;
+            noteSpacing = 0.5f;
+            selectedLane = Core::Lane::TOP;
+            selectedType = Core::NoteType::TAP;
+            holdDuration = 0.5f;
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 30))) {
+            showMultiNoteDialog = false;
+
+            startTime = 0.0f;
+            noteCount = 5;
+            noteSpacing = 0.5f;
+            selectedLane = Core::Lane::TOP;
+            selectedType = Core::NoteType::TAP;
+            holdDuration = 0.5f;
+        }
+
+        ImGui::End();
+    }
 }
 
 } // Windows
