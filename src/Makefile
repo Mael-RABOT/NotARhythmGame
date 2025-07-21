@@ -19,8 +19,11 @@ SOURCES += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui
 SOURCES += $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
 OBJS = $(addsuffix .o, $(basename $(notdir $(SOURCES))))
 UNAME_S := $(shell uname -s)
-LINUX_GL_LIBS = -lGL
 CXXFLAGS = -std=c++17 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I../include
+ifeq ($(UNAME_S), Darwin)
+    CXXFLAGS += `pkg-config glfw3 --cflags-only-I` `pkg-config sndfile --cflags-only-I`
+endif
+
 CXXFLAGS += -g -Wall -Wformat
 LIBS =
 ##---------------------------------------------------------------------
@@ -28,15 +31,26 @@ LIBS =
 ##---------------------------------------------------------------------
 ## This assumes a GL ES library available in the system, e.g. libGLESv2.so
 # CXXFLAGS += -DIMGUI_IMPL_OPENGL_ES2
-# LINUX_GL_LIBS = -lGLESv2
+# GL_LIBS = -lGLESv2
 ##---------------------------------------------------------------------
 ## BUILD FLAGS PER PLATFORM
 ##---------------------------------------------------------------------
 ifeq ($(UNAME_S), Linux) #LINUX
     ECHO_MESSAGE = "Linux"
-    LIBS += $(LINUX_GL_LIBS) `pkg-config --static --libs glfw3` -L../libraries -lbass
+    GL_LIBS = -lGL
+    LIBS += $(GL_LIBS) `pkg-config --static --libs glfw3` -L../libraries -lbass
     LIBS += -lsndfile -lm -lpthread
     LIBS += -Wl,-rpath,'$$ORIGIN/libraries'
+    CXXFLAGS += `pkg-config --cflags glfw3`
+    CFLAGS = $(CXXFLAGS)
+endif
+
+ifeq ($(UNAME_S), Darwin)
+    ECHO_MESSAGE = "Mac OS X"
+    GL_LIBS = -framework OpenGL
+    LIBS += $(GL_LIBS) `pkg-config --static --libs glfw3` -L../libraries -L/opt/homebrew/lib -lbass
+    LIBS += -lsndfile -lm -lpthread
+    LIBS += -Wl,-rpath,@loader_path/libraries
     CXXFLAGS += `pkg-config --cflags glfw3`
     CFLAGS = $(CXXFLAGS)
 endif
@@ -68,7 +82,7 @@ clean:
 ## STATIC BUILD (Self-contained binary)
 ##---------------------------------------------------------------------
 static: CXXFLAGS += -static-libgcc -static-libstdc++
-static: LIBS = $(LINUX_GL_LIBS) -lglfw -L../libraries -lbass -lsndfile -lm -lpthread -ldl -lX11 -lXrandr -lXinerama -lXcursor -lXxf86vm -lXfixes
+static: LIBS = $(GL_LIBS) -lglfw -L../libraries -lbass -lsndfile -lm -lpthread -ldl -lX11 -lXrandr -lXinerama -lXcursor -lXxf86vm -lXfixes
 static: $(EXE)
 	@echo Static build complete for $(ECHO_MESSAGE)
 	@echo "Binary is now self-contained and can be distributed without external dependencies"
