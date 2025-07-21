@@ -72,9 +72,14 @@ For a more in depth view of the roadmap, please refere to the [issues](https://g
    sudo pacman -S base-devel glfw-x11 mesa libsndfile
    ```
 
+   **MacOS:**
+   ```bash
+   brew install glfw3 libsndfile
+   ```
+
 3. **Download BASS audio library**
    - Download BASS from [un4seen.com](https://www.un4seen.com/)
-   - Place `libbass.so` (Linux) in the `libraries/` directory
+   - Place `libbass.so` (Linux), `libbass.dylib` (MacOS) in the `libraries/` directory
 
 4. **Build the project**
    ```bash
