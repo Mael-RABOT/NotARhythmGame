@@ -1,83 +1,74 @@
 #!/bin/bash
-
-# Package script for Not A Rhythm Game
-# This creates a self-contained distribution
-
 set -e
 
-echo "Building Not A Rhythm Game distribution..."
+UNAME_S=$(uname -s)
+if [[ "$UNAME_S" == MINGW* ]] || [[ "$OS" == "Windows_NT" && -z "$UNAME_S" ]]; then
+    PLATFORM="Windows"
+    EXE_NAME="NotARhythmGame.exe"
+    DIST_DIR="NotARhythmGame-Windows"
+    ARCHIVE_NAME="NotARhythmGame-Windows.zip"
+else
+    PLATFORM="Linux"
+    EXE_NAME="NotARhythmGame"
+    DIST_DIR="NotARhythmGame-Linux"
+    ARCHIVE_NAME="NotARhythmGame-Linux.tar.gz"
+fi
 
-# Build the static binary
-echo "Building static binary..."
-make -C src static
+make fclean
 
-# Create distribution directory
-DIST_DIR="NotARhythmGame-Dist"
+echo "Building for $PLATFORM..."
+if [ "$PLATFORM" == "Windows" ]; then
+    make re || echo "Make failed, continuing packaging..."
+else
+    make -C src static
+fi
+
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
-# Copy the binary
-cp NotARhythmGame "$DIST_DIR/"
+cp "$EXE_NAME" "$DIST_DIR/"
 
-# Copy required libraries (if not statically linked)
-if [ -f "libraries/libbass.so" ]; then
-    mkdir -p "$DIST_DIR/libraries"
-    cp libraries/libbass.so "$DIST_DIR/libraries/"
+if [ "$PLATFORM" == "Windows" ]; then
+    DLLS=(
+        "bass.dll" "glfw3.dll" "libwinpthread-1.dll" "libsndfile-1.dll"
+        "libmpg123-0.dll" "libmp3lame-0.dll" "libogg-0.dll" "libFLAC.dll"
+        "libopus-0.dll" "libvorbis-0.dll" "libvorbisenc-2.dll"
+        "libgcc_s_seh-1.dll" "libstdc++-6.dll"
+    )
+    for dll in "${DLLS[@]}"; do
+        if [ -f "$dll" ]; then
+            cp "$dll" "$DIST_DIR/" && echo "$dll copied"
+        else
+            echo "$dll missing"
+        fi
+    done
+    mkdir -p "$DIST_DIR/assets"
+    [ -f "assets/hit.wav" ] && cp "assets/hit.wav" "$DIST_DIR/assets/"
+    cat > "$DIST_DIR/run.bat" <<EOF
+@echo off
+cd /d "%~dp0"
+NotARhythmGame.exe %*
+pause
+EOF
+    cat > "$DIST_DIR/README.txt" <<EOF
+Not A Rhythm Game
+Run with run.bat or double-click the EXE.
+EOF
+    zip -r "$ARCHIVE_NAME" "$DIST_DIR"
+else
+    mkdir -p "$DIST_DIR/assets"
+    [ -f "assets/hit.wav" ] && cp "assets/hit.wav" "$DIST_DIR/assets/"
+    cat > "$DIST_DIR/run.sh" <<EOF
+#!/bin/bash
+DIR=\$(dirname "\$0")
+"\$DIR/$EXE_NAME" "\$@"
+EOF
+    chmod +x "$DIST_DIR/run.sh"
+    cat > "$DIST_DIR/README.txt" <<EOF
+Not A Rhythm Game
+Run with ./NotARhythmGame or ./run.sh
+EOF
+    tar czf "$ARCHIVE_NAME" "$DIST_DIR"
 fi
 
-# Copy assets
-mkdir -p "$DIST_DIR/assets"
-cp assets/hit.wav "$DIST_DIR/assets/"
-
-# Create a launcher script
-cat > "$DIST_DIR/run.sh" << 'EOF'
-#!/bin/bash
-# Launcher script for Not A Rhythm Game
-
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Set library path to include local libraries
-export LD_LIBRARY_PATH="$SCRIPT_DIR/libraries:$LD_LIBRARY_PATH"
-
-# Run the game
-cd "$SCRIPT_DIR"
-./NotARhythmGame "$@"
-EOF
-
-chmod +x "$DIST_DIR/run.sh"
-
-# Create README
-cat > "$DIST_DIR/README.txt" << 'EOF'
-Not A Rhythm Game - Distribution Package
-
-This is a self-contained distribution of Not A Rhythm Game.
-
-To run the game:
-1. Make sure you have execute permissions: chmod +x run.sh
-2. Run: ./run.sh
-
-Or run directly: ./NotARhythmGame
-
-Requirements:
-- Linux with X11 support
-- OpenGL compatible graphics card
-
-The game will create a recent_charts.txt file to remember your recently played charts.
-
-For support or issues, please refer to the original project repository.
-EOF
-
-# Create archive
-echo "Creating distribution archive..."
-tar -czf "NotARhythmGame-Linux.tar.gz" "$DIST_DIR"
-
-echo "Distribution created successfully!"
-echo "Files:"
-echo "  - NotARhythmGame-Linux.tar.gz (distribution archive)"
-echo "  - $DIST_DIR/ (unpacked distribution)"
-echo ""
-echo "To distribute:"
-echo "  1. Send the .tar.gz file to users"
-echo "  2. Users extract: tar -xzf NotARhythmGame-Linux.tar.gz"
-echo "  3. Users run: cd NotARhythmGame-Dist && ./run.sh"
+echo "Package created: $ARCHIVE_NAME"

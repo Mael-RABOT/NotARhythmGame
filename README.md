@@ -77,9 +77,20 @@ For a more in depth view of the roadmap, please refere to the [issues](https://g
    brew install glfw3 libsndfile
    ```
 
+   **Windows:**
+   ```bash
+   pacman -S mingw-w64-x86_64-toolchain
+   pacman -S mingw-w64-x86_64-glfw
+   pacman -S mingw-w64-x86_64-libsndfile
+   pacman -S make
+   pacman -S zip
+   ```
+
+   > For the windows compilation, the project was tested with the [MSYS2 MINGW64](https://www.msys2.org/) environment, which provides a Unix-like environment on Windows. Make sure to install the required packages using `pacman`.
+
 3. **Download BASS audio library**
    - Download BASS from [un4seen.com](https://www.un4seen.com/)
-   - Place `libbass.so` (Linux), `libbass.dylib` (MacOS) in the `libraries/` directory
+   - Place `libbass.so` (Linux), `libbass.dylib` (MacOS) or `bass.dll` in the `libraries/` directory
 
 4. **Build the project**
    ```bash
@@ -184,6 +195,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 - **[BASS](https://www.un4seen.com/)** - Audio library for cross-platform audio support
 - **[GLFW](https://www.glfw.org/)** - Cross-platform library for OpenGL context creation
 - **[OpenGL](https://www.opengl.org/)** - Graphics API for rendering
+- **[MSYS2](https://www.msys2.org/)** - Development environment for Windows]
 
 ## Support & Feedback
 

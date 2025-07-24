@@ -9,6 +9,8 @@
 #   brew install glfw
 # MSYS2:
 #   pacman -S --noconfirm --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-glfw
+# Windows (MSYS2/MinGW):
+#   pacman -S mingw-w64-x86_64-glfw mingw-w64-x86_64-libsndfile
 #
 #CXX = g++
 #CXX = clang++
@@ -21,38 +23,64 @@ OBJS = $(addsuffix .o, $(basename $(notdir $(SOURCES))))
 UNAME_S := $(shell uname -s)
 CXXFLAGS = -std=c++17 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I../include
 ifeq ($(UNAME_S), Darwin)
-    CXXFLAGS += `pkg-config glfw3 --cflags-only-I` `pkg-config sndfile --cflags-only-I`
+	CXXFLAGS += `pkg-config glfw3 --cflags-only-I` `pkg-config sndfile --cflags-only-I`
 endif
 
 CXXFLAGS += -g -Wall -Wformat
 LIBS =
+
 ##---------------------------------------------------------------------
 ## OPENGL ES
 ##---------------------------------------------------------------------
 ## This assumes a GL ES library available in the system, e.g. libGLESv2.so
 # CXXFLAGS += -DIMGUI_IMPL_OPENGL_ES2
 # GL_LIBS = -lGLESv2
+
 ##---------------------------------------------------------------------
 ## BUILD FLAGS PER PLATFORM
 ##---------------------------------------------------------------------
 ifeq ($(UNAME_S), Linux) #LINUX
-    ECHO_MESSAGE = "Linux"
-    GL_LIBS = -lGL
-    LIBS += $(GL_LIBS) `pkg-config --static --libs glfw3` -L../libraries -lbass
-    LIBS += -lsndfile -lm -lpthread
-    LIBS += -Wl,-rpath,'$$ORIGIN/libraries'
-    CXXFLAGS += `pkg-config --cflags glfw3`
-    CFLAGS = $(CXXFLAGS)
+	ECHO_MESSAGE = "Linux"
+	GL_LIBS = -lGL
+	LIBS += $(GL_LIBS) `pkg-config --static --libs glfw3` -L../libraries -lbass
+	LIBS += -lsndfile -lm -lpthread
+	LIBS += -Wl,-rpath,'$$ORIGIN/libraries'
+	CXXFLAGS += `pkg-config --cflags glfw3`
+	CFLAGS = $(CXXFLAGS)
 endif
 
-ifeq ($(UNAME_S), Darwin)
-    ECHO_MESSAGE = "Mac OS X"
-    GL_LIBS = -framework OpenGL
-    LIBS += $(GL_LIBS) `pkg-config --static --libs glfw3` -L../libraries -L/opt/homebrew/lib -lbass
-    LIBS += -lsndfile -lm -lpthread
-    LIBS += -Wl,-rpath,@loader_path/libraries
-    CXXFLAGS += `pkg-config --cflags glfw3`
-    CFLAGS = $(CXXFLAGS)
+ifeq ($(UNAME_S), Darwin) #MAC OS X
+	ECHO_MESSAGE = "Mac OS X"
+	GL_LIBS = -framework OpenGL
+	LIBS += $(GL_LIBS) `pkg-config --static --libs glfw3` -L../libraries -L/opt/homebrew/lib -lbass
+	LIBS += -lsndfile -lm -lpthread
+	LIBS += -Wl,-rpath,@loader_path/libraries
+	CXXFLAGS += `pkg-config --cflags glfw3`
+	CFLAGS = $(CXXFLAGS)
+endif
+
+ifneq (,$(findstring MINGW,$(UNAME_S))) #WINDOWS (MSYS2/MinGW)
+	ECHO_MESSAGE = "MinGW"
+	EXE = ../NotARhythmGame.exe
+	GL_LIBS = -lopengl32
+	LIBS += $(GL_LIBS) -lglfw3 -L../libraries -lbass -lsndfile
+	LIBS += -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -luuid -ladvapi32 -lshell32
+	LIBS += -static-libgcc -static-libstdc++
+	CXXFLAGS += -DWIN32_LEAN_AND_MEAN -D_USE_MATH_DEFINES
+	CFLAGS = $(CXXFLAGS)
+endif
+
+# Alternative Windows detection (if the above doesn't work)
+ifeq ($(OS), Windows_NT)
+	ifeq ($(UNAME_S),)
+		ECHO_MESSAGE = "Windows"
+		EXE = ../NotARhythmGame.exe
+		GL_LIBS = -lopengl32
+		LIBS += $(GL_LIBS) -lglfw3 -L../libraries -lbass -lsndfile
+		LIBS += -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -luuid -ladvapi32 -lshell32
+		CXXFLAGS += -DWIN32_LEAN_AND_MEAN -D_USE_MATH_DEFINES
+		CFLAGS = $(CXXFLAGS)
+	endif
 endif
 
 ##---------------------------------------------------------------------
@@ -72,11 +100,91 @@ all: $(EXE)
 
 $(EXE): $(OBJS)
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBS)
+ifneq (,$(findstring MINGW,$(UNAME_S)))
+	@echo "Copying required DLLs..."
+	@cp -f ../libraries/bass.dll .. 2>/dev/null || echo "bass.dll not found in ../libraries/"
+	@cp -f /mingw64/bin/glfw3.dll .. 2>/dev/null || echo "glfw3.dll not found"
+	@cp -f /mingw64/bin/libwinpthread-1.dll .. 2>/dev/null || echo "libwinpthread-1.dll not found"
+	@cp -f /mingw64/bin/libsndfile-1.dll .. 2>/dev/null || echo "libsndfile-1.dll not found"
+	@cp -f /mingw64/bin/libmpg123-0.dll .. 2>/dev/null || echo "libmpg123-0.dll not found"
+	@cp -f /mingw64/bin/libmp3lame-0.dll .. 2>/dev/null || echo "libmp3lame-0.dll not found"
+	@cp -f /mingw64/bin/libogg-0.dll .. 2>/dev/null || echo "libogg-0.dll not found"
+	@cp -f /mingw64/bin/libFLAC.dll .. 2>/dev/null || echo "libFLAC.dll not found"
+	@cp -f /mingw64/bin/libopus-0.dll .. 2>/dev/null || echo "libopus-0.dll not found"
+	@cp -f /mingw64/bin/libvorbis-0.dll .. 2>/dev/null || echo "libvorbis-0.dll not found"
+	@cp -f /mingw64/bin/libvorbisenc-2.dll .. 2>/dev/null || echo "libvorbisenc-2.dll not found"
+	@cp -f /mingw64/bin/libgcc_s_seh-1.dll .. 2>/dev/null || echo "libgcc_s_seh-1.dll not found"
+	@cp -f /mingw64/bin/libstdc++-6.dll .. 2>/dev/null || echo "libstdc++-6.dll not found"
+	@echo "DLL copying complete"
+endif
+
+ifeq ($(OS), Windows_NT)
+	ifeq ($(UNAME_S),)
+		@echo "Copying required DLLs..."
+		@cp -f ../libraries/bass.dll .. 2>/dev/null || echo "bass.dll not found in ../libraries/"
+		@cp -f /mingw64/bin/glfw3.dll .. 2>/dev/null || echo "glfw3.dll not found"
+		@cp -f /mingw64/bin/libwinpthread-1.dll .. 2>/dev/null || echo "libwinpthread-1.dll not found"
+		@cp -f /mingw64/bin/libsndfile-1.dll .. 2>/dev/null || echo "libsndfile-1.dll not found"
+		@cp -f /mingw64/bin/libmpg123-0.dll .. 2>/dev/null || echo "libmpg123-0.dll not found"
+		@cp -f /mingw64/bin/libmp3lame-0.dll .. 2>/dev/null || echo "libmp3lame-0.dll not found"
+		@cp -f /mingw64/bin/libogg-0.dll .. 2>/dev/null || echo "libogg-0.dll not found"
+		@cp -f /mingw64/bin/libFLAC.dll .. 2>/dev/null || echo "libFLAC.dll not found"
+		@cp -f /mingw64/bin/libopus-0.dll .. 2>/dev/null || echo "libopus-0.dll not found"
+		@cp -f /mingw64/bin/libvorbis-0.dll .. 2>/dev/null || echo "libvorbis-0.dll not found"
+		@cp -f /mingw64/bin/libvorbisenc-2.dll .. 2>/dev/null || echo "libvorbisenc-2.dll not found"
+		@cp -f /mingw64/bin/libgcc_s_seh-1.dll .. 2>/dev/null || echo "libgcc_s_seh-1.dll not found"
+		@cp -f /mingw64/bin/libstdc++-6.dll .. 2>/dev/null || echo "libstdc++-6.dll not found"
+		@echo "DLL copying complete"
+	endif
+endif
+
 
 clean:
 	rm -f $(EXE) $(OBJS)
+	rm -f ../*.dll
 
-.PHONY: all clean static embed-assets
+##---------------------------------------------------------------------
+## COPY DLLS (Windows only)
+##---------------------------------------------------------------------
+copy-dlls:
+ifneq (,$(findstring MINGW,$(UNAME_S)))
+	@echo "Copying required DLLs..."
+	@cp -f ../libraries/bass.dll .. 2>/dev/null || echo "bass.dll not found in ../libraries/"
+	@cp -f /mingw64/bin/glfw3.dll .. 2>/dev/null || echo "glfw3.dll not found"
+	@cp -f /mingw64/bin/libwinpthread-1.dll .. 2>/dev/null || echo "libwinpthread-1.dll not found"
+	@cp -f /mingw64/bin/libsndfile-1.dll .. 2>/dev/null || echo "libsndfile-1.dll not found"
+	@cp -f /mingw64/bin/libmpg123-0.dll .. 2>/dev/null || echo "libmpg123-0.dll not found"
+	@cp -f /mingw64/bin/libmp3lame-0.dll .. 2>/dev/null || echo "libmp3lame-0.dll not found"
+	@cp -f /mingw64/bin/libogg-0.dll .. 2>/dev/null || echo "libogg-0.dll not found"
+	@cp -f /mingw64/bin/libFLAC.dll .. 2>/dev/null || echo "libFLAC.dll not found"
+	@cp -f /mingw64/bin/libopus-0.dll .. 2>/dev/null || echo "libopus-0.dll not found"
+	@cp -f /mingw64/bin/libvorbis-0.dll .. 2>/dev/null || echo "libvorbis-0.dll not found"
+	@cp -f /mingw64/bin/libvorbisenc-2.dll .. 2>/dev/null || echo "libvorbisenc-2.dll not found"
+	@cp -f /mingw64/bin/libgcc_s_seh-1.dll .. 2>/dev/null || echo "libgcc_s_seh-1.dll not found"
+	@cp -f /mingw64/bin/libstdc++-6.dll .. 2>/dev/null || echo "libstdc++-6.dll not found"
+	@echo "DLL copying complete"
+endif
+ifeq ($(OS), Windows_NT)
+	ifeq ($(UNAME_S),)
+	@echo "Copying required DLLs..."
+	@cp -f ../libraries/bass.dll .. 2>/dev/null || echo "bass.dll not found in ../libraries/"
+	@cp -f /mingw64/bin/glfw3.dll .. 2>/dev/null || echo "glfw3.dll not found"
+	@cp -f /mingw64/bin/libwinpthread-1.dll .. 2>/dev/null || echo "libwinpthread-1.dll not found"
+	@cp -f /mingw64/bin/libsndfile-1.dll .. 2>/dev/null || echo "libsndfile-1.dll not found"
+	@cp -f /mingw64/bin/libmpg123-0.dll .. 2>/dev/null || echo "libmpg123-0.dll not found"
+	@cp -f /mingw64/bin/libmp3lame-0.dll .. 2>/dev/null || echo "libmp3lame-0.dll not found"
+	@cp -f /mingw64/bin/libogg-0.dll .. 2>/dev/null || echo "libogg-0.dll not found"
+	@cp -f /mingw64/bin/libFLAC.dll .. 2>/dev/null || echo "libFLAC.dll not found"
+	@cp -f /mingw64/bin/libopus-0.dll .. 2>/dev/null || echo "libopus-0.dll not found"
+	@cp -f /mingw64/bin/libvorbis-0.dll .. 2>/dev/null || echo "libvorbis-0.dll not found"
+	@cp -f /mingw64/bin/libvorbisenc-2.dll .. 2>/dev/null || echo "libvorbisenc-2.dll not found"
+	@cp -f /mingw64/bin/libgcc_s_seh-1.dll .. 2>/dev/null || echo "libgcc_s_seh-1.dll not found"
+	@cp -f /mingw64/bin/libstdc++-6.dll .. 2>/dev/null || echo "libstdc++-6.dll not found"
+	@echo "DLL copying complete"
+	endif
+endif
+
+.PHONY: all clean static embed-assets copy-dlls
 
 ##---------------------------------------------------------------------
 ## STATIC BUILD (Self-contained binary)

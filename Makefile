@@ -19,6 +19,7 @@ package:  ## Create distribution package
 .PHONY: clean
 clean:  ## Clean the project
 	rm -f NotARhythmGame
+	rm -f NotARhythmGame.exe
 	make -C src clean
 
 ##@ Full Clean
@@ -26,8 +27,11 @@ clean:  ## Clean the project
 fclean: clean ## Full clean the project
 	rm -f src/*.o
 	rm -f NotARhythmGame
+	rm -f NotARhythmGame.exe
 	rm -f NotARhythmGame-Linux.tar.gz
 	rm -rf NotARhythmGame-Linux
+	rm -rf NotARhythmGame-Windows
+	rm -rf NotARhythmGame-Windows.zip
 	rm -rf NotARhythmGame-Dist
 
 ##@ Rebuild
