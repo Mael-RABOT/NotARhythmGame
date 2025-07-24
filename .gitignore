@@ -1,9 +1,15 @@
 .idea/
 .vscode/
+.vs/
 *.o
 *.a
+*.dll
 NotARhythmGame
+NotARhythmGame.exe
 *.chart
+NotARhythmGame-Linux/
 NotARhythmGame-Linux.tar.gz
+NotARhythmGame-Windows/
+NotARhythmGame-Windows.zip
 recent_charts.txt
 NotARhythmGame-Dist/
