@@ -24,6 +24,7 @@ public:
     void cleanup();
 
     bool loadSound(const std::string& name, const std::string& filepath);
+    bool isSoundLoaded(const std::string& name);
     bool playSound(const std::string& name, bool loop = false);
     bool stopSound(const std::string& name);
     bool pauseSound(const std::string& name);
