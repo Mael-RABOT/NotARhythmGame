@@ -14,6 +14,10 @@
 #include <fstream>
 #include <cstring>
 #include <filesystem>
+#include <thread>
+#include <complex>
+#include <algorithm>
+#include <numeric>
 
 #include "imgui.h"
 
@@ -121,6 +125,13 @@ namespace Windows {
             bool metronomeEnabled;
             double lastMetronomeBeat;
             int metronomeBeatCount;
+
+            // Spectrum Analysis
+            std::vector<float> spectrumData;
+            std::vector<std::vector<float>> spectrumHistory;
+            bool showSpectrum;
+            int spectrumHistorySize;
+            bool spectrumInitialized;
             bool metronomeSound1;
 
             bool showBpmFinder;
@@ -147,6 +158,8 @@ namespace Windows {
             void drawNoSongLoadedPopup();
             void drawMultiNoteDialog();
             void drawBpmFinder();
+            void drawSpectrumWindow();
+            void updateSpectrum();
             void calculateGridSpacing();
             float getSnapSpacing() const;
             bool shouldSnap() const;

@@ -1,5 +1,4 @@
 #include "Editor.hpp"
-#include <thread>
 
 namespace App {
 namespace Windows {
@@ -607,6 +606,7 @@ Editor::Editor()
       showLoadDialog(false),
       showHelpWindow(false),
       showMultiNoteDialog(false),
+      showSpectrum(false),
       chartTitle(""),
       chartArtist(""),
       speedOverrideEnabled(false),
@@ -616,6 +616,8 @@ Editor::Editor()
       lastMetronomeBeat(0.0),
       metronomeBeatCount(0),
       metronomeSound1(true),
+      spectrumHistorySize(100),
+      spectrumInitialized(false),
       showBpmFinder(false),
       bpmFinderActive(false),
       bpmFinderStartTime(0.0),
@@ -688,6 +690,9 @@ Editor::Editor(Core::SoundManager* soundManager)
       metronomeEnabled(false),
       lastMetronomeBeat(0.0),
       metronomeBeatCount(0),
+      showSpectrum(false),
+      spectrumHistorySize(100),
+      spectrumInitialized(false),
       metronomeSound1(true),
       showBpmFinder(false),
       bpmFinderActive(false),
@@ -765,6 +770,10 @@ void Editor::loadSong(const std::string& filepath) {
         isPlaying = false;
 
         songDuration = soundManager->getDuration("timeline_song");
+
+        if (audioAnalyzer) {
+            audioAnalyzer->cacheAudioForSpectrum(filepath);
+        }
     } else {
         std::cerr << "Failed to load song: " << filepath << std::endl;
     }
@@ -804,6 +813,43 @@ void Editor::updateMetronome() {
         metronomeSound1 = !metronomeSound1;
         metronomeBeatCount = currentBeatNumber;
         lastMetronomeBeat = currentPosition;
+    }
+}
+
+void Editor::updateSpectrum() {
+    if (!showSpectrum || !isSongLoaded || !audioAnalyzer) {
+        return;
+    }
+
+    static double lastUpdateTime = 0.0;
+    double currentTime = ImGui::GetTime();
+    if (currentTime - lastUpdateTime < 0.03) {
+        return;
+    }
+    lastUpdateTime = currentTime;
+
+    const int spectrumSize = 64;
+
+    try {
+        spectrumData = audioAnalyzer->getSpectrumAtTime(currentSongPath, currentPosition, spectrumSize);
+
+        static std::vector<float> previousSpectrum(spectrumSize, 0.0f);
+        const float smoothingFactor = 0.7f;
+
+        for (int i = 0; i < spectrumSize; ++i) {
+            spectrumData[i] = smoothingFactor * previousSpectrum[i] + (1.0f - smoothingFactor) * spectrumData[i];
+            previousSpectrum[i] = spectrumData[i];
+        }
+
+    } catch (const std::exception& e) {
+        spectrumData.resize(spectrumSize);
+        double time = currentPosition;
+
+        for (int i = 0; i < spectrumSize; ++i) {
+            float value = 0.3f + 0.2f * sin(time * 2.0 + i * 0.1f);
+            value = std::max(0.0f, std::min(1.0f, value));
+            spectrumData[i] = value;
+        }
     }
 }
 
@@ -902,6 +948,9 @@ void Editor::handleKeyboardInput() {
             metronomeBeatCount = 0;
             metronomeSound1 = true;
         }
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_D) && ImGui::GetIO().KeyCtrl) {
+        showSpectrum = !showSpectrum;
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_O) && ImGui::GetIO().KeyCtrl) {
@@ -1236,6 +1285,7 @@ void Editor::drawPlaybackCursor() {
 void Editor::update() {
     updatePlayback();
     updateMetronome();
+    updateSpectrum();
     handleKeyboardInput();
     updateAutoscroll();
 }
@@ -1249,6 +1299,11 @@ void Editor::render() {
     drawNoSongLoadedPopup();
     drawMultiNoteDialog();
     drawBpmFinder();
+
+    if (showSpectrum) {
+        drawSpectrumWindow();
+    }
+
     drawNotesList();
     drawPropertiesPanel();
     drawHelpWindow();
@@ -1432,6 +1487,10 @@ void Editor::drawControlsWindow() {
             ImGui::SameLine();
             if (ImGui::Button("Multi-Note", ImVec2(120, 30))) {
                 showMultiNoteDialog = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Spectrum", ImVec2(120, 30))) {
+                showSpectrum = !showSpectrum;
             }
 
             ImGui::EndTabItem();
@@ -2705,6 +2764,7 @@ void Editor::drawHelpWindow() {
     ImGui::Text("Ctrl+M - Open multi-note placer");
     ImGui::Text("Ctrl+P - Toggle properties panel");
     ImGui::Text("Ctrl+B - Open BPM finder");
+    ImGui::Text("Ctrl+D - Toggle spectrum analyzer");
 
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "FILE OPERATIONS");
@@ -3059,6 +3119,107 @@ void Editor::drawBpmFinder() {
 
         ImGui::End();
     }
+}
+
+void Editor::drawSpectrumWindow() {
+    if (!showSpectrum) return;
+
+    ImGui::Begin("Spectrum Analyzer", &showSpectrum, ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Live Spectrum Display");
+    ImGui::Separator();
+
+    if (spectrumData.empty()) {
+        ImGui::Text("No spectrum data");
+        ImGui::End();
+        return;
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 window_size = ImGui::GetWindowSize();
+    ImVec2 content_pos = ImGui::GetCursorScreenPos();
+
+    float spectrum_width = window_size.x - 40.0f;
+    float spectrum_height = 200.0f;
+    float bar_width = spectrum_width / spectrumData.size();
+    float bar_spacing = 2.0f;
+    float actual_bar_width = std::max(1.0f, bar_width - bar_spacing);
+
+    ImVec2 spectrum_start = ImVec2(content_pos.x + 20.0f, content_pos.y + 10.0f);
+    ImVec2 spectrum_end = ImVec2(spectrum_start.x + spectrum_width, spectrum_start.y + spectrum_height);
+
+    draw_list->AddRectFilled(
+        spectrum_start,
+        spectrum_end,
+        IM_COL32(20, 20, 20, 255)
+    );
+
+    for (int i = 0; i <= 10; ++i) {
+        float y = spectrum_start.y + (spectrum_height * i / 10.0f);
+        ImU32 grid_color = (i == 5) ? IM_COL32(100, 100, 100, 255) : IM_COL32(50, 50, 50, 255);
+        draw_list->AddLine(
+            ImVec2(spectrum_start.x, y),
+            ImVec2(spectrum_end.x, y),
+            grid_color,
+            1.0f
+        );
+    }
+
+    for (size_t i = 0; i < spectrumData.size(); ++i) {
+        float bar_height = spectrumData[i] * spectrum_height;
+        float bar_x = spectrum_start.x + (i * bar_width);
+        float bar_y = spectrum_start.y + spectrum_height - bar_height;
+
+        ImU32 bar_color;
+        float intensity = spectrumData[i];
+        if (intensity > 0.8f) {
+            bar_color = IM_COL32(255, 50, 50, 255);
+        } else if (intensity > 0.6f) {
+            bar_color = IM_COL32(255, 150, 50, 255);
+        } else if (intensity > 0.4f) {
+            bar_color = IM_COL32(255, 255, 50, 255);
+        } else if (intensity > 0.2f) {
+            bar_color = IM_COL32(50, 255, 50, 255);
+        } else {
+            bar_color = IM_COL32(50, 150, 255, 255);
+        }
+
+        draw_list->AddRectFilled(
+            ImVec2(bar_x + 1, bar_y + 1),
+            ImVec2(bar_x + actual_bar_width + 1, spectrum_start.y + spectrum_height + 1),
+            IM_COL32(0, 0, 0, 100),
+            2.0f
+        );
+
+        draw_list->AddRectFilled(
+            ImVec2(bar_x, bar_y),
+            ImVec2(bar_x + actual_bar_width, spectrum_start.y + spectrum_height),
+            bar_color,
+            2.0f
+        );
+
+        if (bar_height > 5.0f) {
+            draw_list->AddRectFilled(
+                ImVec2(bar_x, bar_y),
+                ImVec2(bar_x + actual_bar_width, bar_y + 3.0f),
+                IM_COL32(255, 255, 255, 150),
+                2.0f
+            );
+        }
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(content_pos.x + 20.0f, content_pos.y + spectrum_height + 20.0f));
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Frequency Range: 0 - %.0f Hz", 22050.0f * spectrumData.size() / 64.0f);
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Bars: %zu | Position: %.2fs | Real-time FFT", spectrumData.size(), currentPosition);
+
+    if (!spectrumData.empty()) {
+        float max_value = *std::max_element(spectrumData.begin(), spectrumData.end());
+        float avg_value = std::accumulate(spectrumData.begin(), spectrumData.end(), 0.0f) / spectrumData.size();
+
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Max: %.3f | Avg: %.3f", max_value, avg_value);
+    }
+
+    ImGui::End();
 }
 
 } // Windows

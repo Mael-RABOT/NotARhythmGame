@@ -469,3 +469,104 @@ AudioWaveform AudioAnalyzer::analyzeAudio(const std::string& filename) {
         throw std::runtime_error("Failed to analyze audio file: " + std::string(e.what()));
     }
 }
+
+void AudioAnalyzer::cacheAudioForSpectrum(const std::string& filename) {
+    if (cachedAudioFile == filename && !cachedAudioData.empty()) {
+        return;
+    }
+
+    try {
+        cachedAudioData = loadAudioFile(filename, cachedSampleRate, cachedDuration);
+        cachedAudioFile = filename;
+    } catch (const std::exception& e) {
+        std::cerr << "Error caching audio for spectrum: " << e.what() << std::endl;
+        clearAudioCache();
+    }
+}
+
+void AudioAnalyzer::clearAudioCache() {
+    cachedAudioFile.clear();
+    cachedAudioData.clear();
+    cachedSampleRate = 0.0;
+    cachedDuration = 0.0;
+}
+
+std::vector<float> AudioAnalyzer::getSpectrumAtTime(const std::string& filename, double time, int spectrumSize) {
+    std::vector<float> spectrum(spectrumSize, 0.0f);
+
+    try {
+        if (cachedAudioFile != filename || cachedAudioData.empty()) {
+            cacheAudioForSpectrum(filename);
+        }
+
+        if (cachedAudioData.empty()) {
+            return spectrum;
+        }
+
+        size_t sampleIndex = static_cast<size_t>(time * cachedSampleRate);
+        if (sampleIndex >= cachedAudioData.size()) {
+            return spectrum;
+        }
+
+        int windowSize = 1024;
+        size_t startIndex = sampleIndex;
+        size_t endIndex = std::min(startIndex + windowSize, cachedAudioData.size());
+
+        std::vector<double> window;
+        for (size_t i = startIndex; i < endIndex; i++) {
+            window.push_back(cachedAudioData[i]);
+        }
+
+        while (window.size() < static_cast<size_t>(windowSize)) {
+            window.push_back(0.0);
+        }
+
+        for (int i = 0; i < windowSize; i++) {
+            double windowValue = 0.5 * (1.0 - std::cos(2.0 * M_PI * i / (windowSize - 1)));
+            window[i] *= windowValue;
+        }
+
+        std::vector<float> magnitudes(spectrumSize);
+
+        for (int bin = 0; bin < spectrumSize; bin++) {
+            double real = 0.0, imag = 0.0;
+
+            for (int n = 0; n < windowSize; n++) {
+                double angle = -2.0 * M_PI * bin * n / windowSize;
+                real += window[n] * std::cos(angle);
+                imag += window[n] * std::sin(angle);
+            }
+
+            double magnitude = std::sqrt(real * real + imag * imag);
+            magnitudes[bin] = static_cast<float>(magnitude);
+        }
+
+        float maxMagnitude = 0.0f;
+        for (float mag : magnitudes) {
+            maxMagnitude = std::max(maxMagnitude, mag);
+        }
+
+        if (maxMagnitude > 0.0f) {
+            for (int i = 0; i < spectrumSize; i++) {
+                float frequencyWeight = 1.0f;
+                float normalizedFreq = static_cast<float>(i) / spectrumSize;
+
+                if (normalizedFreq < 0.1f) {
+                    frequencyWeight = 2.0f;
+                } else if (normalizedFreq < 0.3f) {
+                    frequencyWeight = 1.5f;
+                } else if (normalizedFreq > 0.7f) {
+                    frequencyWeight = 0.5f;
+                }
+
+                spectrum[i] = (magnitudes[i] / maxMagnitude) * frequencyWeight;
+                spectrum[i] = std::min(1.0f, spectrum[i]);
+            }
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error getting spectrum: " << e.what() << std::endl;
+    }
+
+    return spectrum;
+}

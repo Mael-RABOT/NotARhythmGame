@@ -76,6 +76,11 @@ private:
     std::function<void(const AnalysisProgress&)> progressCallback;
     size_t maxFileSize;
 
+    std::string cachedAudioFile;
+    std::vector<double> cachedAudioData;
+    double cachedSampleRate;
+    double cachedDuration;
+
     void updateProgress(double progress, const std::string& stage);
     std::vector<double> loadAudioFile(const std::string& filename, double& sampleRate, double& duration);
     WaveformLevel generateWaveformLevel(const std::vector<double>& channelData, int samplesPerPixel);
@@ -87,5 +92,8 @@ public:
     AudioAnalyzer(size_t maxFileSize = 500 * 1024 * 1024);
     void setProgressCallback(std::function<void(const AnalysisProgress&)> callback);
     AudioWaveform analyzeAudio(const std::string& filename);
+    std::vector<float> getSpectrumAtTime(const std::string& filename, double time, int spectrumSize = 64);
+    void cacheAudioForSpectrum(const std::string& filename);
+    void clearAudioCache();
 };
 

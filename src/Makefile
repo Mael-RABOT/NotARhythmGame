@@ -26,7 +26,7 @@ ifeq ($(UNAME_S), Darwin)
 	CXXFLAGS += `pkg-config glfw3 --cflags-only-I` `pkg-config sndfile --cflags-only-I`
 endif
 
-CXXFLAGS += -g -Wall -Wformat
+CXXFLAGS += -g -Wall -Wformat -Wno-reorder
 LIBS =
 
 ##---------------------------------------------------------------------
