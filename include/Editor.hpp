@@ -117,6 +117,12 @@ namespace Windows {
             float playbackSpeed;
             float originalPlaybackSpeed;
 
+            // Metronome
+            bool metronomeEnabled;
+            double lastMetronomeBeat;
+            int metronomeBeatCount;
+            bool metronomeSound1;
+
             bool showBpmFinder;
             bool bpmFinderActive;
             std::vector<double> bpmTapTimes;
@@ -127,6 +133,7 @@ namespace Windows {
 
             void loadSong(const std::string& filepath);
             void updatePlayback();
+            void updateMetronome();
             void handleKeyboardInput();
             void drawTimelineGrid();
             void drawPlaybackCursor();

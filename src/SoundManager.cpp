@@ -63,6 +63,10 @@ bool SoundManager::loadSound(const std::string& name, const std::string& filepat
     return true;
 }
 
+bool SoundManager::isSoundLoaded(const std::string& name) {
+    return loadedSounds.find(name) != loadedSounds.end();
+}
+
 bool SoundManager::playSound(const std::string& name, bool loop) {
     if (!initialized) {
         std::cerr << "SoundManager not initialized!" << std::endl;

@@ -612,6 +612,10 @@ Editor::Editor()
       speedOverrideEnabled(false),
       playbackSpeed(0.5f),
       originalPlaybackSpeed(1.0f),
+      metronomeEnabled(false),
+      lastMetronomeBeat(0.0),
+      metronomeBeatCount(0),
+      metronomeSound1(true),
       showBpmFinder(false),
       bpmFinderActive(false),
       bpmFinderStartTime(0.0),
@@ -681,6 +685,10 @@ Editor::Editor(Core::SoundManager* soundManager)
       speedOverrideEnabled(false),
       playbackSpeed(0.5f),
       originalPlaybackSpeed(1.0f),
+      metronomeEnabled(false),
+      lastMetronomeBeat(0.0),
+      metronomeBeatCount(0),
+      metronomeSound1(true),
       showBpmFinder(false),
       bpmFinderActive(false),
       bpmFinderStartTime(0.0),
@@ -774,6 +782,31 @@ void Editor::updatePlayback() {
     }
 }
 
+void Editor::updateMetronome() {
+    if (!metronomeEnabled || !soundManager || !isSongLoaded || !isPlaying) return;
+
+    double beatDuration = 60.0 / bpm;
+
+    double currentBeat = currentPosition / beatDuration;
+    int currentBeatNumber = static_cast<int>(currentBeat);
+
+    if (currentBeatNumber > metronomeBeatCount) {
+        if (metronomeSound1) {
+            if (soundManager->isSoundLoaded("metronome1")) {
+                soundManager->playSound("metronome1");
+            }
+        } else {
+            if (soundManager->isSoundLoaded("metronome2")) {
+                soundManager->playSound("metronome2");
+            }
+        }
+
+        metronomeSound1 = !metronomeSound1;
+        metronomeBeatCount = currentBeatNumber;
+        lastMetronomeBeat = currentPosition;
+    }
+}
+
 void Editor::handleKeyboardInput() {
     if (showFileDialog || showSaveDialog || showLoadDialog) return;
 
@@ -809,6 +842,9 @@ void Editor::handleKeyboardInput() {
         double zero = 0;
         currentPosition = zero;
         soundManager->seekTo("timeline_song", currentPosition);
+
+        metronomeBeatCount = 0;
+        metronomeSound1 = true;
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_S) && !ImGui::GetIO().KeyCtrl) {
@@ -853,6 +889,19 @@ void Editor::handleKeyboardInput() {
     }
     if (ImGui::IsKeyPressed(ImGuiKey_B) && ImGui::GetIO().KeyCtrl) {
         showBpmFinder = true;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_M) && !ImGui::GetIO().KeyCtrl) {
+        metronomeEnabled = !metronomeEnabled;
+        if (metronomeEnabled && soundManager) {
+            if (!soundManager->isSoundLoaded("metronome1")) {
+                soundManager->loadSound("metronome1", "assets/metronome1.wav");
+            }
+            if (!soundManager->isSoundLoaded("metronome2")) {
+                soundManager->loadSound("metronome2", "assets/metronome2.wav");
+            }
+            metronomeBeatCount = 0;
+            metronomeSound1 = true;
+        }
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_O) && ImGui::GetIO().KeyCtrl) {
@@ -1186,6 +1235,7 @@ void Editor::drawPlaybackCursor() {
 
 void Editor::update() {
     updatePlayback();
+    updateMetronome();
     handleKeyboardInput();
     updateAutoscroll();
 }
@@ -1252,6 +1302,9 @@ void Editor::drawControlsWindow() {
                     currentPosition = 0.0;
                     scrollOffset = 0.0f;
                     targetScrollOffset = 0.0f;
+
+                    metronomeBeatCount = 0;
+                    metronomeSound1 = true;
                 }
             }
 
@@ -1288,6 +1341,28 @@ void Editor::drawControlsWindow() {
                 ImGui::Text("Playback Speed: %.2fx", playbackSpeed);
                 ImGui::SliderFloat("##playbackSpeed", &playbackSpeed, 0.1f, 2.0f, "%.2fx");
                 ImGui::EndDisabled();
+            }
+
+            ImGui::Spacing();
+
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Metronome");
+            ImGui::Separator();
+
+            if (ImGui::Checkbox("Enable Metronome", &metronomeEnabled)) {
+                if (metronomeEnabled && soundManager) {
+                    if (!soundManager->isSoundLoaded("metronome1")) {
+                        soundManager->loadSound("metronome1", "assets/metronome1.wav");
+                    }
+                    if (!soundManager->isSoundLoaded("metronome2")) {
+                        soundManager->loadSound("metronome2", "assets/metronome2.wav");
+                    }
+                    lastMetronomeBeat = 0.0;
+                    metronomeBeatCount = 0;
+                    metronomeSound1 = true;
+                }
+            }
+            if (metronomeEnabled) {
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Metronome will play on each beat (%.1f BPM)", bpm);
             }
 
             ImGui::EndTabItem();
@@ -2597,6 +2672,7 @@ void Editor::drawHelpWindow() {
     ImGui::Text("Left/Right Arrow - Seek backward/forward");
     ImGui::Text("S - Toggle speed override");
     ImGui::Text("+/- (when speed override enabled) - Adjust speed");
+    ImGui::Text("M - Toggle metronome");
 
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "NOTE PLACEMENT");
