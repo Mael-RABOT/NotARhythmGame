@@ -26,9 +26,56 @@
 #pragma comment(lib, "legacy_stdio_definitions")
 #endif
 
-// This example can also compile and run with Emscripten! See 'Makefile.emscripten' for details.
+// This example can also compile and run with Emscripten!
 #ifdef __EMSCRIPTEN__
-#include "../libs/emscripten/emscripten_mainloop_stub.h"
+#include <emscripten.h>
+
+// Global variables for Emscripten main loop
+static GLFWwindow* g_window = nullptr;
+static ImVec4 g_clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+// Emscripten main loop function
+void main_loop(void* userData) {
+    if (glfwWindowShouldClose(g_window) || App::isShutdownRequested())
+        return;
+
+    // Poll and handle events (inputs, window resize, etc.)
+    glfwPollEvents();
+    if (glfwGetWindowAttrib(g_window, GLFW_ICONIFIED) != 0)
+    {
+        ImGui_ImplGlfw_Sleep(10);
+        return;
+    }
+
+    // Start the Dear ImGui frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    // My application
+    App::run();
+
+    // Rendering
+    ImGui::Render();
+    int display_w, display_h;
+    glfwGetFramebufferSize(g_window, &display_w, &display_h);
+    glViewport(0, 0, display_w, display_h);
+    glClearColor(g_clear_color.x * g_clear_color.w, g_clear_color.y * g_clear_color.w, g_clear_color.z * g_clear_color.w, g_clear_color.w);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    // Update and Render additional Platform Windows
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        GLFWwindow* backup_current_context = glfwGetCurrentContext();
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+        glfwMakeContextCurrent(backup_current_context);
+    }
+
+    glfwSwapBuffers(g_window);
+}
 #endif
 
 static void glfw_error_callback(int error, const char* description)
@@ -135,10 +182,14 @@ int main(int argc, char** argv)
     // For an Emscripten build we are disabling file-system access, so let's not attempt to do a fopen() of the imgui.ini file.
     // You may manually call LoadIniSettingsFromMemory() to load settings from your own storage.
     io.IniFilename = nullptr;
-    EMSCRIPTEN_MAINLOOP_BEGIN
+
+    // Set global variables for Emscripten main loop
+    g_window = window;
+    g_clear_color = clear_color;
+
+    emscripten_set_main_loop_arg(main_loop, nullptr, 0, 1);
 #else
     while (!glfwWindowShouldClose(window) && !App::isShutdownRequested())
-#endif
     {
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
@@ -182,8 +233,6 @@ int main(int argc, char** argv)
 
         glfwSwapBuffers(window);
     }
-#ifdef __EMSCRIPTEN__
-    EMSCRIPTEN_MAINLOOP_END;
 #endif
 
     // Cleanup

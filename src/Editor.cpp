@@ -639,7 +639,7 @@ Editor::Editor()
     refreshFileList();
 }
 
-Editor::Editor(Core::SoundManager* soundManager)
+Editor::Editor(SoundManager* soundManager)
     : soundManager(soundManager),
       currentSongPath(""),
       currentSongName(""),

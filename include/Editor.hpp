@@ -26,10 +26,6 @@
 #include "Common.hpp"
 #include "AudioAnalazyer.hpp"
 
-#define BASS_DEFAULT_DEVICE -1
-#define BASS_MAX_FREQUENCY 44100
-#define BASS_MIN_FREQUENCY 0
-
 #define TIMELINE_OFFSET 4.0f
 
 #define MIN_ZOOM_LEVEL 1.0f
@@ -55,7 +51,7 @@ namespace Windows {
     class Editor {
         private:
             // Audio management
-            Core::SoundManager* soundManager;
+            SoundManager* soundManager;
             std::string currentSongPath;
             std::string currentSongName;
             bool isSongLoaded;
@@ -185,7 +181,7 @@ namespace Windows {
 
         public:
             Editor();
-            Editor(Core::SoundManager* soundManager);
+            Editor(SoundManager* soundManager);
             ~Editor() = default;
 
             void render();

@@ -22,10 +22,6 @@
 #include "NodeManager.hpp"
 #include "Common.hpp"
 
-#define BASS_DEFAULT_DEVICE -1
-#define BASS_MAX_FREQUENCY 44100
-#define BASS_MIN_FREQUENCY 0
-
 #define TIMELINE_OFFSET 4.0f
 
 #define RECENT_CHART_FILE "recent_charts.txt"
@@ -90,7 +86,7 @@ namespace Windows {
 
     class Player {
         private:
-            Core::SoundManager* soundManager;
+            SoundManager* soundManager;
             std::string currentSongPath;
             std::string currentSongName;
             bool isSongLoaded;
@@ -243,7 +239,7 @@ namespace Windows {
 
         public:
             Player();
-            Player(Core::SoundManager* soundManager);
+            Player(SoundManager* soundManager);
             ~Player();
 
             void render();

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Not A Rhythm Game</title>
+    <style>
+        body {
+            font-family: arial;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .emscripten {
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            margin: 0px;
+            border: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: block;
+            image-rendering: optimizeSpeed;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -o-crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: optimize-contrast;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            -ms-interpolation-mode: nearest-neighbor;
+        }
+
+        div.emscripten { text-align: center; }
+        div.emscripten_border { border: none; }
+
+        /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+        canvas.emscripten {
+            border: 0px none;
+            background-color: black;
+        }
+
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 1000;
+            color: white;
+        }
+
+        #loading-bar {
+            width: 300px;
+            height: 4px;
+            background-color: #333;
+            border-radius: 2px;
+            margin: 20px auto;
+            overflow: hidden;
+        }
+
+        #loading-progress {
+            width: 0%;
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+        }
+
+        #fullscreen-btn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 1px solid #666;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            z-index: 1001;
+            font-size: 12px;
+        }
+
+        #fullscreen-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+        }
+
+        #error {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff6b6b;
+            text-align: center;
+            display: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div>Loading...</div>
+        <div id="loading-bar">
+            <div id="loading-progress"></div>
+        </div>
+        <div id="loading-text">Initializing WebAssembly</div>
+    </div>
+
+    <button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+
+    <div id="error"></div>
+
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+    <script>
+        var Module = {
+            preRun: [],
+            postRun: [],
+            print: function(text) {
+                console.log('WASM:', text);
+            },
+            printErr: function(text) {
+                console.error('WASM Error:', text);
+            },
+            canvas: (function() {
+                var canvas = document.getElementById('canvas');
+                console.log('Canvas element:', canvas);
+                return canvas;
+            })(),
+            setStatus: function(text) {
+                console.log('WASM Status:', text);
+                document.getElementById('loading-text').textContent = text;
+            },
+            onRuntimeInitialized: function() {
+                console.log('WebAssembly runtime initialized');
+                document.getElementById('loading').style.display = 'none';
+            },
+            onError: function(error) {
+                console.error('WebAssembly error:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').innerHTML = '<p>Error loading WebAssembly module: ' + error + '</p>';
+            }
+        };
+
+        // Loading progress simulation
+        var progress = 0;
+        var progressInterval = setInterval(function() {
+            progress += Math.random() * 15;
+            if (progress > 90) progress = 90;
+
+            document.getElementById('loading-progress').style.width = progress + '%';
+
+            if (progress < 30) {
+                document.getElementById('loading-text').textContent = 'Loading WebAssembly...';
+            } else if (progress < 60) {
+                document.getElementById('loading-text').textContent = 'Initializing graphics...';
+            } else if (progress < 90) {
+                document.getElementById('loading-text').textContent = 'Starting application...';
+            }
+        }, 100);
+
+        // Load the WebAssembly module
+        var script = document.createElement('script');
+        script.src = 'NotARhythmGame.js';
+        script.onload = function() {
+            clearInterval(progressInterval);
+            document.getElementById('loading-progress').style.width = '100%';
+            document.getElementById('loading-text').textContent = 'Ready!';
+        };
+        script.onerror = function() {
+            clearInterval(progressInterval);
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').innerHTML = '<p>Error: Could not load NotARhythmGame.js</p>';
+        };
+        document.head.appendChild(script);
+
+        // Fullscreen functionality
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log('Error attempting to enable fullscreen:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Update fullscreen button text
+        document.addEventListener('fullscreenchange', function() {
+            var btn = document.getElementById('fullscreen-btn');
+            if (document.fullscreenElement) {
+                btn.textContent = '⛶ Exit Fullscreen';
+            } else {
+                btn.textContent = '⛶ Fullscreen';
+            }
+        });
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (Module && Module.canvas) {
+                console.log('Window resized');
+            }
+        });
+    </script>
+</body>
+</html>

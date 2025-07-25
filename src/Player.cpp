@@ -87,7 +87,7 @@ Player::Player()
     loadRecentCharts();
 }
 
-Player::Player(Core::SoundManager* soundManager)
+Player::Player(SoundManager* soundManager)
     : soundManager(soundManager),
       currentSongPath(""),
       currentSongName(""),

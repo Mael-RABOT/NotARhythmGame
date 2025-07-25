@@ -55,7 +55,7 @@ namespace App
 
     void run() {
         static Config config;
-        static std::unique_ptr<Core::SoundManager> soundManager = std::make_unique<Core::SoundManager>();
+        static std::unique_ptr<SoundManager> soundManager = std::make_unique<SoundManager>();
         static Windows::Editor editor(soundManager.get());
         static Windows::Player player(soundManager.get());
         static AppMode currentMode = AppMode::MAIN_MENU;
