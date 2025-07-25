@@ -79,6 +79,49 @@ serve-wasm: wasm  ## Build and serve WebAssembly version locally
 		echo "Or manually serve the web/ directory with any web server"; \
 	fi
 
+.PHONY: serve-wasm-prod
+serve-wasm-prod:  ## Serve WebAssembly version with production server
+	@echo "Checking WebAssembly files..."
+	@if [ ! -f web/NotARhythmGame.wasm ]; then \
+		echo "Error: WebAssembly file not found: web/NotARhythmGame.wasm"; \
+		echo "Please build the WebAssembly version first with: make wasm"; \
+		exit 1; \
+	fi
+	@if [ ! -f web/NotARhythmGame.js ]; then \
+		echo "Error: JavaScript file not found: web/NotARhythmGame.js"; \
+		echo "Please build the WebAssembly version first with: make wasm"; \
+		exit 1; \
+	fi
+	@echo "Starting production web server..."
+	@if command -v nginx >/dev/null 2>&1; then \
+		echo "Using nginx for production serving..."; \
+		echo "Creating temporary nginx config..."; \
+		echo "server { listen 8079; root $(PWD)/web; index index.html; location ~* \.wasm$ { add_header Content-Type application/wasm; } }" > /tmp/notarhythmgame_nginx.conf; \
+		echo "Starting nginx on port 8079..."; \
+		nginx -c /tmp/notarhythmgame_nginx.conf -g "daemon off;" & \
+		echo "Nginx started on http://localhost:8079"; \
+		echo "Press Ctrl+C to stop"; \
+		wait; \
+	elif command -v lighttpd >/dev/null 2>&1; then \
+		echo "Using lighttpd for production serving..."; \
+		echo "server.document-root = \"$(PWD)/web\"" > /tmp/lighttpd.conf; \
+		echo "server.port = 8079" >> /tmp/lighttpd.conf; \
+		echo "mimetype.assign = ( \".wasm\" => \"application/wasm\" )" >> /tmp/lighttpd.conf; \
+		cd web && lighttpd -D -f /tmp/lighttpd.conf; \
+	elif command -v node >/dev/null 2>&1; then \
+		echo "Using Node.js http-server for production serving..."; \
+		npx http-server web -p 8079 -a 0.0.0.0 --cors -c-1; \
+	elif command -v python3 >/dev/null 2>&1; then \
+		echo "Using Python3 for production serving..."; \
+		cd web && python3 -m http.server 8079; \
+	else \
+		echo "No production web server found. Please install nginx, lighttpd, or node.js"; \
+		echo "Available options:"; \
+		echo "  nginx: sudo apt install nginx"; \
+		echo "  lighttpd: sudo apt install lighttpd"; \
+		echo "  node.js: curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs"; \
+	fi
+
 ##@ Package
 .PHONY: package
 package:  ## Create distribution package
