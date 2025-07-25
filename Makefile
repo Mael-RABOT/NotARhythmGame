@@ -89,7 +89,8 @@ package:  ## Create distribution package
 clean:  ## Clean the project
 	rm -f NotARhythmGame
 	rm -f NotARhythmGame.exe
-	rm -rf web/
+	rm -rf web/*.wasm
+	rm -rf web/*.data
 	make -C src clean
 
 ##@ Full Clean
@@ -103,7 +104,8 @@ fclean: clean ## Full clean the project
 	rm -rf NotARhythmGame-Windows
 	rm -rf NotARhythmGame-Windows.zip
 	rm -rf NotARhythmGame-Dist
-	rm -rf web/
+	rm -rf web/*.wasm
+	rm -rf web/*.data
 
 ##@ Rebuild
 .PHONY: re

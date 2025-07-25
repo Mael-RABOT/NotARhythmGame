@@ -22,10 +22,6 @@
 #include "NodeManager.hpp"
 #include "Common.hpp"
 
-#define BASS_DEFAULT_DEVICE -1
-#define BASS_MAX_FREQUENCY 44100
-#define BASS_MIN_FREQUENCY 0
-
 #define TIMELINE_OFFSET 4.0f
 
 #define RECENT_CHART_FILE "recent_charts.txt"

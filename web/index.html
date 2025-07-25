@@ -143,6 +143,7 @@
             }
         };
 
+        // Loading progress simulation
         var progress = 0;
         var progressInterval = setInterval(function() {
             progress += Math.random() * 15;
@@ -159,6 +160,7 @@
             }
         }, 100);
 
+        // Load the WebAssembly module
         var script = document.createElement('script');
         script.src = 'NotARhythmGame.js';
         script.onload = function() {
@@ -174,6 +176,7 @@
         };
         document.head.appendChild(script);
 
+        // Fullscreen functionality
         function toggleFullscreen() {
             if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen().catch(err => {
@@ -184,6 +187,7 @@
             }
         }
 
+        // Update fullscreen button text
         document.addEventListener('fullscreenchange', function() {
             var btn = document.getElementById('fullscreen-btn');
             if (document.fullscreenElement) {
@@ -193,6 +197,7 @@
             }
         });
 
+        // Handle window resize
         window.addEventListener('resize', function() {
             if (Module && Module.canvas) {
                 console.log('Window resized');

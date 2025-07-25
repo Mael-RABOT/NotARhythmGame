@@ -14,58 +14,21 @@ typedef unsigned long long QWORD;
 #include "bass.h"
 #endif
 
+// Define BASS constants for both WebAssembly and normal compilation
+#ifndef BASS_DEFAULT_DEVICE
+#define BASS_DEFAULT_DEVICE -1
+#endif
+#ifndef BASS_MAX_FREQUENCY
+#define BASS_MAX_FREQUENCY 44100
+#endif
+#ifndef BASS_MIN_FREQUENCY
+#define BASS_MIN_FREQUENCY 100
+#endif
+
 class SoundManager {
 private:
     std::map<std::string, HSTREAM> streams;
     bool initialized;
-
-#ifdef __EMSCRIPTEN__
-    // WebAssembly stub implementations
-    static const int BASS_DEFAULT_DEVICE = -1;
-    static const int BASS_MAX_FREQUENCY = 44100;
-    static const int BASS_MIN_FREQUENCY = 100;
-    static const int BASS_SAMPLE_LOOP = 4;
-    static const int BASS_ATTRIB_VOL = 2;
-    static const int BASS_POS_BYTE = 0;
-    static const int BASS_ACTIVE_PLAYING = 3;
-    static const int BASS_ACTIVE_PAUSED = 2;
-    static const int BASS_ATTRIB_FREQ = 1;
-    static const int BASS_OK = 0;
-    static const int BASS_ERROR_MEM = 1;
-    static const int BASS_ERROR_FILEOPEN = 2;
-    static const int BASS_ERROR_DRIVER = 3;
-    static const int BASS_ERROR_BUFLOST = 4;
-    static const int BASS_ERROR_HANDLE = 5;
-    static const int BASS_ERROR_FORMAT = 6;
-    static const int BASS_ERROR_POSITION = 7;
-    static const int BASS_ERROR_INIT = 8;
-    static const int BASS_ERROR_START = 9;
-    static const int BASS_ERROR_ALREADY = 10;
-    static const int BASS_ERROR_NOCHAN = 11;
-    static const int BASS_ERROR_ILLTYPE = 12;
-    static const int BASS_ERROR_ILLPARAM = 13;
-    static const int BASS_ERROR_NO3D = 14;
-    static const int BASS_ERROR_NOEAX = 15;
-    static const int BASS_ERROR_DEVICE = 16;
-    static const int BASS_ERROR_NOPLAY = 17;
-    static const int BASS_ERROR_FREQ = 18;
-    static const int BASS_ERROR_NOTFILE = 19;
-    static const int BASS_ERROR_NOHW = 20;
-    static const int BASS_ERROR_EMPTY = 21;
-    static const int BASS_ERROR_NONET = 22;
-    static const int BASS_ERROR_CREATE = 23;
-    static const int BASS_ERROR_NOFX = 24;
-    static const int BASS_ERROR_NOTAVAIL = 25;
-    static const int BASS_ERROR_DECODE = 26;
-    static const int BASS_ERROR_DX = 27;
-    static const int BASS_ERROR_TIMEOUT = 28;
-    static const int BASS_ERROR_FILEFORM = 29;
-    static const int BASS_ERROR_SPEAKER = 30;
-    static const int BASS_ERROR_VERSION = 31;
-    static const int BASS_ERROR_CODEC = 32;
-    static const int BASS_ERROR_ENDED = 33;
-    static const int BASS_ERROR_BUSY = 34;
-#endif
 
 public:
     SoundManager();
