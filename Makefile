@@ -69,11 +69,11 @@ wasm-debug:  ## Build WebAssembly version with debug symbols
 serve-wasm: wasm  ## Build and serve WebAssembly version locally
 	@echo "Starting local web server..."
 	@if command -v python3 >/dev/null 2>&1; then \
-		cd web && python3 -m http.server 8000; \
+		cd web && python3 -m http.server 8079; \
 	elif command -v python >/dev/null 2>&1; then \
-		cd web && python -m SimpleHTTPServer 8000; \
+		cd web && python -m SimpleHTTPServer 8079; \
 	elif command -v node >/dev/null 2>&1; then \
-		npx http-server web -p 8000; \
+		npx http-server web -p 8079; \
 	else \
 		echo "No suitable web server found. Please install python3, python, or node.js"; \
 		echo "Or manually serve the web/ directory with any web server"; \
