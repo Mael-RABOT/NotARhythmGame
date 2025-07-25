@@ -55,7 +55,7 @@ namespace Windows {
     class Editor {
         private:
             // Audio management
-            Core::SoundManager* soundManager;
+            SoundManager* soundManager;
             std::string currentSongPath;
             std::string currentSongName;
             bool isSongLoaded;
@@ -185,7 +185,7 @@ namespace Windows {
 
         public:
             Editor();
-            Editor(Core::SoundManager* soundManager);
+            Editor(SoundManager* soundManager);
             ~Editor() = default;
 
             void render();

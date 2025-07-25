@@ -1,6 +1,41 @@
 #include "AudioAnalazyer.hpp"
 #include <limits>
 
+#ifdef __EMSCRIPTEN__
+// WebAssembly stubs for libsndfile functions
+#include <sndfile.h>
+
+// Define missing constants if not available
+#ifndef SFM_READ
+#define SFM_READ 0x10
+#endif
+
+// Stub implementations for WebAssembly
+static SNDFILE* sf_open_stub(const char* path, int mode, SF_INFO* sfinfo) {
+    // Return a dummy file handle
+    return reinterpret_cast<SNDFILE*>(1);
+}
+
+static int sf_close_stub(SNDFILE* sndfile) {
+    return 0; // Success
+}
+
+static sf_count_t sf_readf_double_stub(SNDFILE* sndfile, double* ptr, sf_count_t frames) {
+    // Return 0 frames read (empty file)
+    return 0;
+}
+
+static const char* sf_strerror_stub(SNDFILE* sndfile) {
+    return "WebAssembly stub - no audio file support";
+}
+
+// Override the libsndfile functions
+#define sf_open sf_open_stub
+#define sf_close sf_close_stub
+#define sf_readf_double sf_readf_double_stub
+#define sf_strerror sf_strerror_stub
+#endif
+
 AudioAnalyzer::AudioAnalyzer(size_t maxFileSize) : maxFileSize(maxFileSize) {}
 
 void AudioAnalyzer::setProgressCallback(std::function<void(const AnalysisProgress&)> callback) {

@@ -90,7 +90,7 @@ namespace Windows {
 
     class Player {
         private:
-            Core::SoundManager* soundManager;
+            SoundManager* soundManager;
             std::string currentSongPath;
             std::string currentSongName;
             bool isSongLoaded;
@@ -243,7 +243,7 @@ namespace Windows {
 
         public:
             Player();
-            Player(Core::SoundManager* soundManager);
+            Player(SoundManager* soundManager);
             ~Player();
 
             void render();

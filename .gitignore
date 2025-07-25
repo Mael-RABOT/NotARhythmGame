@@ -13,3 +13,5 @@ NotARhythmGame-Windows/
 NotARhythmGame-Windows.zip
 recent_charts.txt
 NotARhythmGame-Dist/
+web/NotARhythmGame.wasm
+web/NotARhythmGame.data

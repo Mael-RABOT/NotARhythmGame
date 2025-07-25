@@ -1,34 +1,48 @@
 #include "SoundManager.hpp"
-#include "bass.h"
 
-namespace App {
-namespace Core {
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/val.h>
+using namespace emscripten;
+#endif
 
-SoundManager::SoundManager() : initialized(false) {
+SoundManager::SoundManager() : initialized(false), globalVolume(1.0f) {
 }
 
 SoundManager::~SoundManager() {
     cleanup();
 }
 
-bool SoundManager::initialize(int device, DWORD freq, DWORD flags) {
+bool SoundManager::initialize(int device, int freq, int flags) {
     if (initialized) {
         return true;
     }
 
+#ifdef __EMSCRIPTEN__
+    // For WebAssembly, we'll use Web Audio API
+    // This is a stub implementation - in a real scenario, you'd need to
+    // implement Web Audio API integration
+    initialized = true;
+    return true;
+#else
     if (!BASS_Init(device, freq, flags, 0, NULL)) {
         std::cerr << "Failed to initialize BASS: " << getLastError() << std::endl;
         return false;
     }
-
     initialized = true;
     return true;
+#endif
 }
 
 void SoundManager::cleanup() {
     if (initialized) {
-        unloadAllSounds();
+        stopAllSounds();
+        streams.clear();
+#ifdef __EMSCRIPTEN__
+        // Web Audio API cleanup would go here
+#else
         BASS_Free();
+#endif
         initialized = false;
     }
 }
@@ -39,32 +53,26 @@ bool SoundManager::loadSound(const std::string& name, const std::string& filepat
         return false;
     }
 
-    if (loadedSounds.find(name) != loadedSounds.end()) {
-        unloadSound(name);
+    if (streams.find(name) != streams.end()) {
+        // Sound already loaded
+        return true;
     }
 
+#ifdef __EMSCRIPTEN__
+    // For WebAssembly, we'll use a simple ID system
+    // In a real implementation, you'd load the audio file using Web Audio API
+    static int nextId = 1;
+    streams[name] = nextId++;
+    return true;
+#else
     HSTREAM stream = BASS_StreamCreateFile(FALSE, filepath.c_str(), 0, 0, 0);
     if (!stream) {
         std::cerr << "Failed to load sound '" << name << "' from '" << filepath << "': " << getLastError() << std::endl;
         return false;
     }
-
-    QWORD length = BASS_ChannelGetLength(stream, BASS_POS_BYTE);
-    if (static_cast<int>(length) != -1) {
-        double duration = BASS_ChannelBytes2Seconds(stream, length);
-        originalDurations[name] = duration;
-    } else {
-        originalDurations[name] = 0.0;
-    }
-
-    originalSpeeds[name] = 1.0f;
-
-    loadedSounds[name] = stream;
+    streams[name] = stream;
     return true;
-}
-
-bool SoundManager::isSoundLoaded(const std::string& name) {
-    return loadedSounds.find(name) != loadedSounds.end();
+#endif
 }
 
 bool SoundManager::playSound(const std::string& name, bool loop) {
@@ -73,12 +81,17 @@ bool SoundManager::playSound(const std::string& name, bool loop) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         std::cerr << "Sound '" << name << "' not found!" << std::endl;
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Playing sound: " << name << (loop ? " (looped)" : "") << std::endl;
+    return true;
+#else
     HSTREAM stream = it->second;
 
     if (loop) {
@@ -91,8 +104,8 @@ bool SoundManager::playSound(const std::string& name, bool loop) {
         std::cerr << "Failed to play sound '" << name << "': " << getLastError() << std::endl;
         return false;
     }
-
     return true;
+#endif
 }
 
 bool SoundManager::stopSound(const std::string& name) {
@@ -100,12 +113,18 @@ bool SoundManager::stopSound(const std::string& name) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Stopping sound: " << name << std::endl;
+    return true;
+#else
     return BASS_ChannelStop(it->second);
+#endif
 }
 
 bool SoundManager::pauseSound(const std::string& name) {
@@ -113,12 +132,18 @@ bool SoundManager::pauseSound(const std::string& name) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Pausing sound: " << name << std::endl;
+    return true;
+#else
     return BASS_ChannelPause(it->second);
+#endif
 }
 
 bool SoundManager::resumeSound(const std::string& name) {
@@ -126,12 +151,18 @@ bool SoundManager::resumeSound(const std::string& name) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Resuming sound: " << name << std::endl;
+    return true;
+#else
     return BASS_ChannelPlay(it->second, FALSE);
+#endif
 }
 
 bool SoundManager::setVolume(const std::string& name, float volume) {
@@ -139,14 +170,18 @@ bool SoundManager::setVolume(const std::string& name, float volume) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return false;
     }
 
-    volume = std::max(0.0f, std::min(1.0f, volume));
-
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Setting volume for " << name << " to " << volume << std::endl;
+    return true;
+#else
     return BASS_ChannelSetAttribute(it->second, BASS_ATTRIB_VOL, volume);
+#endif
 }
 
 bool SoundManager::isPlaying(const std::string& name) {
@@ -154,52 +189,41 @@ bool SoundManager::isPlaying(const std::string& name) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    return false; // Stub implementation
+#else
     DWORD state = BASS_ChannelIsActive(it->second);
     return (state == BASS_ACTIVE_PLAYING);
+#endif
 }
 
-double SoundManager::getPosition(const std::string& name) {
+double SoundManager::getCurrentTime(const std::string& name) {
     if (!initialized) {
         return 0.0;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return 0.0;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    return 0.0; // Stub implementation
+#else
     QWORD position = BASS_ChannelGetPosition(it->second, BASS_POS_BYTE);
     if (static_cast<int>(position) == -1) {
         return 0.0;
     }
-
-    // Convert bytes to seconds
     double time = BASS_ChannelBytes2Seconds(it->second, position);
     return time;
-}
-
-bool SoundManager::setPosition(const std::string& name, double position) {
-    if (!initialized) {
-        return false;
-    }
-
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
-        return false;
-    }
-
-    // Convert seconds to bytes
-    QWORD bytes = BASS_ChannelSeconds2Bytes(it->second, position);
-    if (static_cast<int>(bytes) == -1) {
-        return false;
-    }
-
-    return BASS_ChannelSetPosition(it->second, bytes, BASS_POS_BYTE);
+#endif
 }
 
 double SoundManager::getDuration(const std::string& name) {
@@ -207,65 +231,163 @@ double SoundManager::getDuration(const std::string& name) {
         return 0.0;
     }
 
-    auto it = originalDurations.find(name);
-    if (it == originalDurations.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return 0.0;
     }
 
-    return it->second;
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    return 0.0; // Stub implementation
+#else
+    QWORD length = BASS_ChannelGetLength(it->second, BASS_POS_BYTE);
+    if (static_cast<int>(length) == -1) {
+        return 0.0;
+    }
+    double duration = BASS_ChannelBytes2Seconds(it->second, length);
+    return duration;
+#endif
 }
 
-bool SoundManager::seekTo(const std::string& name, double position) {
+bool SoundManager::setPosition(const std::string& name, double time) {
     if (!initialized) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return false;
     }
 
-    // Get current playback state
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Setting position for " << name << " to " << time << std::endl;
+    return true;
+#else
+    QWORD bytes = BASS_ChannelSeconds2Bytes(it->second, time);
+    return BASS_ChannelSetPosition(it->second, bytes, BASS_POS_BYTE);
+#endif
+}
+
+bool SoundManager::setFrequency(const std::string& name, int frequency) {
+    if (!initialized) {
+        return false;
+    }
+
+    auto it = streams.find(name);
+    if (it == streams.end()) {
+        return false;
+    }
+
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Setting frequency for " << name << " to " << frequency << std::endl;
+    return true;
+#else
     DWORD state = BASS_ChannelIsActive(it->second);
     bool wasPlaying = (state == BASS_ACTIVE_PLAYING);
     bool wasPaused = (state == BASS_ACTIVE_PAUSED);
 
-    // Set the new position
-    if (!setPosition(name, position)) {
-        return false;
+    if (wasPlaying || wasPaused) {
+        QWORD currentPos = BASS_ChannelGetPosition(it->second, BASS_POS_BYTE);
+        bool success = BASS_ChannelSetAttribute(it->second, BASS_ATTRIB_FREQ, frequency);
+        if (success) {
+            BASS_ChannelSetPosition(it->second, currentPos, BASS_POS_BYTE);
+            if (wasPlaying) {
+                BASS_ChannelPlay(it->second, FALSE);
+            } else if (wasPaused) {
+                BASS_ChannelPause(it->second);
+            }
+        }
+        return success;
+    } else {
+        return BASS_ChannelSetAttribute(it->second, BASS_ATTRIB_FREQ, frequency);
     }
-
-    // Restore playback state
-    if (wasPlaying) {
-        BASS_ChannelPlay(it->second, FALSE);
-    } else if (wasPaused) {
-        BASS_ChannelPause(it->second);
-    }
-
-    return true;
+#endif
 }
 
-void SoundManager::unloadSound(const std::string& name) {
-    auto it = loadedSounds.find(name);
-    if (it != loadedSounds.end()) {
-        BASS_StreamFree(it->second);
-        loadedSounds.erase(it);
+int SoundManager::getFrequency(const std::string& name) {
+    if (!initialized) {
+        return 0;
     }
 
-    originalDurations.erase(name);
-    originalSpeeds.erase(name);
-}
-
-void SoundManager::unloadAllSounds() {
-    for (auto& pair : loadedSounds) {
-        BASS_StreamFree(pair.second);
+    auto it = streams.find(name);
+    if (it == streams.end()) {
+        return 0;
     }
-    loadedSounds.clear();
-    originalDurations.clear();
-    originalSpeeds.clear();
+
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    return 44100; // Default frequency
+#else
+    float frequency;
+    if (!BASS_ChannelGetAttribute(it->second, BASS_ATTRIB_FREQ, &frequency)) {
+        return 0;
+    }
+    return static_cast<int>(frequency);
+#endif
 }
 
-std::string SoundManager::getLastError() {
+void SoundManager::stopAllSounds() {
+    if (!initialized) {
+        return;
+    }
+
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Stopping all sounds" << std::endl;
+#else
+    for (auto& pair : streams) {
+        BASS_ChannelStop(pair.second);
+    }
+#endif
+}
+
+void SoundManager::pauseAllSounds() {
+    if (!initialized) {
+        return;
+    }
+
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Pausing all sounds" << std::endl;
+#else
+    for (auto& pair : streams) {
+        BASS_ChannelPause(pair.second);
+    }
+#endif
+}
+
+void SoundManager::resumeAllSounds() {
+    if (!initialized) {
+        return;
+    }
+
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Resuming all sounds" << std::endl;
+#else
+    for (auto& pair : streams) {
+        DWORD state = BASS_ChannelIsActive(pair.second);
+        if (state == BASS_ACTIVE_PAUSED) {
+            BASS_ChannelPlay(pair.second, FALSE);
+        }
+    }
+#endif
+}
+
+void SoundManager::setGlobalVolume(float volume) {
+    globalVolume = volume;
+    // Apply to all sounds
+    for (auto& pair : streams) {
+        setVolume(pair.first, volume);
+    }
+}
+
+std::string SoundManager::getLastError() const {
+#ifdef __EMSCRIPTEN__
+    return "WebAssembly stub implementation - no errors available";
+#else
     int error = BASS_ErrorGetCode();
     switch (error) {
         case BASS_OK: return "No error";
@@ -305,28 +427,32 @@ std::string SoundManager::getLastError() {
         case BASS_ERROR_BUSY: return "The device is busy";
         default: return "Unknown error";
     }
+#endif
+}
+
+// Additional methods needed by Editor
+double SoundManager::getPosition(const std::string& name) {
+    return getCurrentTime(name);
+}
+
+bool SoundManager::seekTo(const std::string& name, double position) {
+    return setPosition(name, position);
+}
+
+bool SoundManager::isSoundLoaded(const std::string& name) {
+    return streams.find(name) != streams.end();
 }
 
 float SoundManager::getPlaybackSpeed(const std::string& name) {
+#ifdef __EMSCRIPTEN__
+    return 1.0f; // Stub implementation
+#else
     if (!initialized) {
         return 1.0f;
     }
 
-    auto it = originalSpeeds.find(name);
-    if (it == originalSpeeds.end()) {
-        return 1.0f;
-    }
-
-    return it->second;
-}
-
-float SoundManager::getCurrentPlaybackSpeed(const std::string& name) {
-    if (!initialized) {
-        return 1.0f;
-    }
-
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return 1.0f;
     }
 
@@ -336,6 +462,11 @@ float SoundManager::getCurrentPlaybackSpeed(const std::string& name) {
     }
 
     return frequency / 44100.0f;
+#endif
+}
+
+float SoundManager::getCurrentPlaybackSpeed(const std::string& name) {
+    return getPlaybackSpeed(name);
 }
 
 bool SoundManager::setPlaybackSpeed(const std::string& name, float speed) {
@@ -343,13 +474,18 @@ bool SoundManager::setPlaybackSpeed(const std::string& name, float speed) {
         return false;
     }
 
-    auto it = loadedSounds.find(name);
-    if (it == loadedSounds.end()) {
+    auto it = streams.find(name);
+    if (it == streams.end()) {
         return false;
     }
 
     speed = std::max(0.1f, std::min(4.0f, speed));
 
+#ifdef __EMSCRIPTEN__
+    // Web Audio API implementation would go here
+    std::cout << "Setting playback speed for " << name << " to " << speed << std::endl;
+    return true;
+#else
     DWORD state = BASS_ChannelIsActive(it->second);
     bool wasPlaying = (state == BASS_ACTIVE_PLAYING);
     bool wasPaused = (state == BASS_ACTIVE_PAUSED);
@@ -368,12 +504,33 @@ bool SoundManager::setPlaybackSpeed(const std::string& name, float speed) {
         } else if (wasPaused) {
             BASS_ChannelPause(it->second);
         }
-
-        originalSpeeds[name] = speed;
     }
 
     return success;
+#endif
 }
 
-} // Core
-} // App
+void SoundManager::unloadSound(const std::string& name) {
+    auto it = streams.find(name);
+    if (it != streams.end()) {
+#ifdef __EMSCRIPTEN__
+        // Web Audio API cleanup would go here
+        std::cout << "Unloading sound: " << name << std::endl;
+#else
+        BASS_StreamFree(it->second);
+#endif
+        streams.erase(it);
+    }
+}
+
+void SoundManager::unloadAllSounds() {
+#ifdef __EMSCRIPTEN__
+    // Web Audio API cleanup would go here
+    std::cout << "Unloading all sounds" << std::endl;
+#else
+    for (auto& pair : streams) {
+        BASS_StreamFree(pair.second);
+    }
+#endif
+    streams.clear();
+}
